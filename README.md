@@ -256,6 +256,11 @@ python tests/selftest.py                    # 临时真实 git 仓库端到端�
 坏心跳与未来时钟语义、worktree 跨区可见且不误报、卸载安全（用户数据不丢）、
 忽略清单文档一致性等。Windows 上会自动处理 git 只读对象；`KEEP_TMP=1` 可保留现场。
 
+**贡献提示**：kit 根目录的 `AGENTS.md` / `CLAUDE.md` / `platforms/` 是**要发布的产品模板**
+（正常入库），改它们等于改产品；测试一律通过 `tests/selftest.py` 在系统临时目录进行，
+**不要**在 kit 目录里自安装（安装器会拒绝）。变更请同步更新
+[CHANGELOG.md](CHANGELOG.md) 与 `install.py` 的 `KIT_VERSION`。
+
 ---
 
 ## 起源
