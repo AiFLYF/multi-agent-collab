@@ -1,0 +1,35 @@
+name: selftest
+
+# 零依赖纯标准库测试：看板内置断言 + 在临时 git 仓库里的安装器端到端演练。
+# 触发：推送到任意分支、针对任意分支的 PR、手工 dispatch。
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.8", "3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Show versions
+        run: |
+          python --version
+          git --version
+
+      - name: Board selfcheck
+        run: python tools/agents_status.py --selfcheck
+
+      - name: Installer end-to-end tests
+        run: python tests/selftest.py

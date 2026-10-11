@@ -1,0 +1,24 @@
+# .gitattributes —— 后写覆盖先写（last match wins）：兜底规则放最前，例外放后面。
+# 本套件手册 B7 专门讲过顺序错误把源码变二进制的坑，这里以身作则。
+
+* text=auto eol=lf
+
+*.py    text eol=lf diff=python
+*.md    text eol=lf diff=markdown
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.json  text eol=lf
+*.txt   text eol=lf
+
+# Windows 批处理需要 CRLF（本仓库目前没有，保留规则以备将来）
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# 明确的二进制类型（目前仓库没有图片/压缩包，列出常见项防止误判）
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.zip   binary
+*.gz    binary
