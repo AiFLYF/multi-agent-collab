@@ -18,8 +18,8 @@ $ARGUMENTS
 
 1. `git fetch origin --prune`
 2. `gh pr list --state open` —— 看有没有已经开着、改了同一批文件的 PR
-3. `python tools/agents_status.py` —— 确认本机没有活跃会话占用同一分支或同一批文件；
-   若有冲突，先在 `.agents/inbox/` 留问，不要抢活
+3. `python tools/agents_status.py --brief` —— 一行摘要确认本机没有活跃会话占用
+   同一分支或同一批文件（rc=1 再跑无参数完整版）；有冲突先在 `.agents/inbox/` 留问，不要抢活
 4. 读 `.agents/inbox/` 中点名 claude / any 的未答问题与近两天 worklog
 
 随后：从最新 `develop` 切 `feature/<任务名>` → 复制
@@ -29,5 +29,10 @@ $ARGUMENTS
 推送项目分支并 `gh pr create --base develop`（PR 描述写改动/原因/测试证据）
 → session 置 done、worklog 追加总结（本地保存即可）。
 
-遇到 AGENTS.md 第 5 节的异常信号（.git 被别的进程修改、出现来历不明的分支、
+遇到 AGENTS.md 第 5 节的异常信号（.git 被其他进程修改、出现来历不明的分支、
 远程历史突变）时立即停手，只读取证并通知用户，不得 init / reset / force push / 删 .git。
+
+用户要求看图形化看板/网页指挥时，帮他后台启动 `python tools/agents_status.py --web`
+（默认仅 127.0.0.1；`--bind 0.0.0.0` 必须配 `--no-directives` 或环境变量
+MULTI_AGENT_BOARD_PASSWORD 密码，HTTP 明文仅限可信网络）。任务阶段间隙重扫
+`.agents/inbox/`，`from: human*` 的人类指令优先级最高，"暂停/取消"立即执行。
