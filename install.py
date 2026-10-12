@@ -26,15 +26,63 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
 KIT_ROOT = Path(__file__).resolve().parent
-KIT_VERSION = "1.1.0"   # 升级 kit 时记得改；会写进目标项目的 .agents/install.json
+KIT_VERSION = "1.3.1"   # 升级 kit 时记得改；会写进目标项目的 .agents/install.json
+
+# 与 tools/agents_status.py 同名同义：git 可执行文件解析的环境变量覆盖
+# （两份小拷贝是有意为之——看板会被单独装进目标项目，不能 import 安装器）。
+GIT_ENV_VAR = "MULTI_AGENT_GIT"
+_GIT_FORCE_OFF = {"none", "0", "off", "no", "false"}
+_GIT_UNSET = object()
+_git_bin_cache: object = _GIT_UNSET
+
+
+def _candidate_git_paths() -> list[str]:
+    cands: list[str] = []
+    if os.name == "nt":
+        for env_name, sub in (
+            ("ProgramFiles", r"Git\cmd\git.exe"),
+            ("ProgramFiles(x86)", r"Git\cmd\git.exe"),
+            ("LOCALAPPDATA", r"Programs\Git\cmd\git.exe"),
+        ):
+            base = os.environ.get(env_name)
+            if base:
+                cands.append(os.path.join(base, sub))
+    else:
+        cands += ["/opt/homebrew/bin/git", "/usr/local/bin/git", "/usr/bin/git"]
+    return cands
+
+
+def resolve_git() -> str | None:
+    """环境变量 > PATH > 常见安装路径；找不到返回 None（结果缓存）。"""
+    global _git_bin_cache
+    if _git_bin_cache is not _GIT_UNSET:
+        return _git_bin_cache  # type: ignore[return-value]
+    override = os.environ.get(GIT_ENV_VAR, "").strip()
+    if override.lower() in _GIT_FORCE_OFF:
+        _git_bin_cache = None
+        return None
+    if override:
+        _git_bin_cache = override
+        return override
+    found = shutil.which("git")
+    if not found:
+        for cand in _candidate_git_paths():
+            if os.path.isfile(cand):
+                found = cand
+                break
+    _git_bin_cache = found
+    return found
+
 
 # (kit 内源路径, 安装目标相对路径, 定制区名或 None；"__troubles__" 走专用合并)
 CORE_FILES = [
@@ -94,10 +142,25 @@ def read_text(path: Path) -> str | None:
 
 
 def write_lf(path: Path, content: str) -> None:
-    """统一以 LF + UTF-8 写入（.git 元数据类文件怕 CRLF，见手册 B12）。"""
+    """统一以 LF + UTF-8 原子写入（同目录临时文件 + os.replace）。
+
+    .git 元数据类文件怕 CRLF（见手册 B12），也怕写到一半进程被杀（手册 A4）：
+    直接 open("w") 会先截断目标，崩溃后只剩半个文件。临时文件与目标同目录，
+    os.replace 在同卷上是原子替换。
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8", newline="\n") as f:
-        f.write(content)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp",
+                                    dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+            f.write(content)
+        os.replace(tmp_name, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
 
 
 def stamp() -> str:
@@ -212,9 +275,12 @@ def merge_troubleshooting(template: str, old: str | None, project_name: str) -> 
 # --------------------------------------------------------------------------- #
 
 def git_ok(target: Path, *args: str) -> tuple[bool, str]:
+    git = resolve_git()
+    if not git:
+        return False, "git 不可用（PATH 与常见安装路径都没找到；可用环境变量 " + GIT_ENV_VAR + " 指定）"
     try:
         r = subprocess.run(
-            ["git", *args], cwd=str(target), capture_output=True,
+            [git, *args], cwd=str(target), capture_output=True,
             text=True, encoding="utf-8", errors="replace", timeout=20,
         )
         return r.returncode == 0, r.stdout
@@ -312,7 +378,16 @@ def update_excludes(target: Path, dry_run: bool) -> str:
             if not exclude.exists():
                 current = ""
             else:
-                continue  # 读不了（非 UTF-8 且存在异常）就不碰它
+                # 读不了（存在但非 UTF-8）：绝不静默跳过——否则结尾可能误报"已是最新"
+                try:
+                    where = str(exclude.relative_to(target))
+                except ValueError:
+                    where = str(exclude) + "（git 公共目录）"
+                print(f"  ⚠ 跳过非 UTF-8 的忽略文件 {where}：未改写其内容，"
+                      "托管块也没写进去；请先把它转成 UTF-8 后重跑安装器，"
+                      "或手工把 EXCLUDE_ENTRIES 加进去")
+                state = "updated"   # 让上层知道本次不是"一切已是最新"
+                continue
         cleaned = strip_managed(current)
         if cleaned and not cleaned.endswith("\n"):
             cleaned += "\n"
@@ -489,8 +564,12 @@ def cmd_install(args: argparse.Namespace) -> int:
     print(f"  2. 到项目根目录跑一次看板：cd \"{target}\" ; python tools/agents_status.py")
     print("  3. 开一个新对话，问 AI「你开工前要先做什么？」，应答出 fetch + 看板 + 看 inbox")
     print()
-    print(f"完成：新建/覆盖 {stats['write']} 个，相同跳过 {stats['skip']} 个。"
-          f"旧版备份统一在 .agents/backups/。")
+    if args.dry_run:
+        print(f"演练完成（未写盘）：将新建/覆盖 {stats['write']} 个，"
+              f"相同跳过 {stats['skip']} 个。旧版备份统一在 .agents/backups/。")
+    else:
+        print(f"完成：新建/覆盖 {stats['write']} 个，相同跳过 {stats['skip']} 个。"
+              f"旧版备份统一在 .agents/backups/。")
     print(f"体检随时可跑：python \"{KIT_ROOT / 'install.py'}\" doctor \"{target}\"")
     return 0
 
@@ -571,7 +650,11 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
     print("\n【git 与本地忽略】")
     if not is_git_repo(target):
-        warn("不是 git 仓库（或 git 不可用）；git init 后重跑安装器即可补上忽略规则")
+        if (target / ".git").exists():
+            warn(f"检测到 .git 但 git 调不动：请把 Git 加入 PATH，或用环境变量 "
+                 f"{GIT_ENV_VAR} 指向 git 可执行文件后重跑体检")
+        else:
+            warn("不是 git 仓库（或 git 不可用）；git init 后重跑安装器即可补上忽略规则")
     else:
         locs = exclude_paths(target)
         if not locs:

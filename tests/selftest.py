@@ -43,25 +43,45 @@ def rmtree_readonly(path: Path) -> None:
     repos = [path] if (path / ".git").is_dir() else []
     repos += [g.parent for g in path.rglob(".git") if g.is_dir()]
     for repo in dict.fromkeys(repos):
-        r = run("git", "worktree", "list", "--porcelain", cwd=repo)
+        # 清理是"尽力而为"：高负载/杀软扫描时 git 可能超时，任何一步失败都只警告，
+        # 继续走后面的强制删除，绝不让收尾报错掩盖测试本身的结论
+        try:
+            r = run("git", "worktree", "list", "--porcelain", cwd=repo, timeout=180)
+        except Exception as e:
+            print(f"[rmtree] git worktree list 失败，跳过摘除：{e}")
+            continue
         wt_dirs = [ln[9:].strip() for ln in r.stdout.splitlines()
                    if ln.startswith("worktree ")][1:]   # 第一条是主工作区
         for d in wt_dirs:
-            run("git", "worktree", "remove", "--force", d, cwd=repo)
-        run("git", "worktree", "prune", cwd=repo)
+            try:
+                run("git", "worktree", "remove", "--force", d, cwd=repo, timeout=180)
+            except Exception as e:
+                print(f"[rmtree] worktree remove {d} 失败：{e}")
+        try:
+            run("git", "worktree", "prune", cwd=repo, timeout=180)
+        except Exception as e:
+            print(f"[rmtree] worktree prune 失败：{e}")
 
     # 2) 多轮 chmod + 删除：句柄延迟释放时单轮重试不够（实测需要等到 1 秒以上）
-    def _on_error(func, fpath, exc_info):
+    # Python 3.12 起 onerror 弃用，改用 onexc（第三参是异常实例而非 exc_info 三元组）；
+    # 3.8/3.10 没有 onexc，保留旧签名。
+    def _clear_readonly(func, fpath, _exc):
         try:
             os.chmod(fpath, stat.S_IWRITE | stat.S_IREAD)
             func(fpath)
         except OSError:
             pass
 
+    def _rmtree():
+        if sys.version_info >= (3, 12):
+            shutil.rmtree(path, onexc=_clear_readonly)
+        else:
+            shutil.rmtree(path, onerror=_clear_readonly)
+
     for delay in (0, 0.3, 0.8, 1.5):
         if delay:
             time.sleep(delay)
-        shutil.rmtree(path, onerror=_on_error)
+        _rmtree()
         if not path.exists():
             return
 
@@ -91,18 +111,23 @@ CORE_TARGETS = [dst for _src, dst, _zone in inst.CORE_FILES]
 PLATFORM_TARGETS = [dst for _src, dst in inst.PLATFORM_FILES.values()] + [inst.WORKBUDDY_TARGET]
 
 
-def run(*args: str, cwd: Path, timeout: int = 90) -> subprocess.CompletedProcess:
+def run(*args: str, cwd: Path, timeout: int = 90,
+        env: dict | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(
         list(args), cwd=str(cwd), capture_output=True, text=True,
-        encoding="utf-8", errors="replace", timeout=timeout)
+        encoding="utf-8", errors="replace", timeout=timeout, env=env)
 
 
 def git_available() -> bool:
-    try:
-        r = run("git", "--version", cwd=Path(tempfile.gettempdir()), timeout=10)
-        return r.returncode == 0
-    except Exception:
-        return False
+    """与安装器同一套解析逻辑（PATH 之外还探测常见安装路径）。"""
+    return inst.resolve_git() is not None
+
+
+def force_no_git_env() -> dict:
+    """让子进程把 git 视为不可用（经环境变量覆盖，无需真的破坏 PATH）。"""
+    e = dict(os.environ)
+    e[inst.GIT_ENV_VAR] = "none"
+    return e
 
 
 def install(proj: Path, *extra: str) -> subprocess.CompletedProcess:
@@ -127,7 +152,276 @@ class TestBoardUnits(unittest.TestCase):
     def test_selfcheck_passes(self) -> None:
         r = run(PY, str(KIT / "tools" / "agents_status.py"), "--selfcheck", cwd=KIT)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn(f"selfcheck: 24/24 通过", r.stdout)
+        self.assertIn(f"selfcheck: 48/48 通过", r.stdout)
+
+    def test_board_version_matches_installer(self) -> None:
+        """看板 BOARD_VERSION 必须与安装器 KIT_VERSION 一致（防双份漂移）。"""
+        self.assertEqual(board.BOARD_VERSION, inst.KIT_VERSION)
+        r = run(PY, str(KIT / "tools" / "agents_status.py"), "--version", cwd=KIT)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn(inst.KIT_VERSION, r.stdout)
+
+    def test_git_resolver_env_override(self) -> None:
+        """MULTI_AGENT_GIT：none 强制不可用；显式路径原样采用。"""
+        old = os.environ.get(board.GIT_ENV_VAR)
+        try:
+            os.environ[board.GIT_ENV_VAR] = "none"
+            board._reset_git_cache()
+            self.assertIsNone(board.resolve_git())
+            os.environ[board.GIT_ENV_VAR] = PY
+            board._reset_git_cache()
+            self.assertEqual(board.resolve_git(), PY)
+        finally:
+            board._reset_git_cache()
+            if old is None:
+                os.environ.pop(board.GIT_ENV_VAR, None)
+            else:
+                os.environ[board.GIT_ENV_VAR] = old
+
+    def test_git_resolver_finds_fake_git_on_path(self) -> None:
+        """PATH 里放一个假 git 目录应被优先发现（证明不依赖硬编码安装路径）。"""
+        d = Path(tempfile.mkdtemp(prefix="mac-fakegit-"))
+        fake = d / ("git.exe" if os.name == "nt" else "git")
+        fake.write_bytes(b"fake" if os.name == "nt" else b"#!/bin/sh\n")
+        if os.name != "nt":
+            fake.chmod(0o755)
+        old_path = os.environ.get("PATH", "")
+        old_ov = os.environ.pop(board.GIT_ENV_VAR, None)
+        board._reset_git_cache()
+        try:
+            os.environ["PATH"] = str(d) + os.pathsep + old_path
+            self.assertEqual(os.path.normcase(board.resolve_git()),
+                             os.path.normcase(str(fake)))
+        finally:
+            os.environ["PATH"] = old_path
+            if old_ov is not None:
+                os.environ[board.GIT_ENV_VAR] = old_ov
+            board._reset_git_cache()
+            shutil.rmtree(d, ignore_errors=True)
+
+    def test_inbox_extra_closed_words(self) -> None:
+        """cancelled / abandoned 等关闭态不得再算作 open 问题。"""
+        d = Path(tempfile.mkdtemp(prefix="mac-inbox-"))
+        try:
+            idir = d / ".agents" / "inbox"
+            idir.mkdir(parents=True)
+            (idir / "Q-1.md").write_text(
+                "- from: a\n- to: any\n- status: cancelled\n- created: 2026-10-11 10:00\n",
+                encoding="utf-8")
+            (idir / "Q-2.md").write_text(
+                "- from: a\n- to: any\n- status: abandoned\n- created: 2026-10-11 10:00\n",
+                encoding="utf-8")
+            (idir / "Q-3.md").write_text(
+                "- from: a\n- to: any\n- status: open\n- created: 2026-10-11 10:00\n",
+                encoding="utf-8")
+            r = run(PY, str(KIT / "tools" / "agents_status.py"), "--json",
+                    cwd=d, env=force_no_git_env())
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)  # Q-3 仍 open
+            ids = {q["file"] for q in json.loads(r.stdout)["inbox_open"]}
+            self.assertEqual(ids, {"Q-3.md"})
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+    def test_write_lf_atomic_no_temp_leftovers(self) -> None:
+        d = Path(tempfile.mkdtemp(prefix="mac-write-"))
+        try:
+            p = Path(d) / "sub" / "a.txt"
+            inst.write_lf(p, "hello\n")
+            self.assertEqual(p.read_text(encoding="utf-8"), "hello\n")
+            leftovers = list(Path(d).rglob("*.tmp"))
+            self.assertEqual(leftovers, [])
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+    def test_html_snapshot_cli(self) -> None:
+        """--html 生成自包含单文件快照；默认落在 .agents/board.html。"""
+        d = Path(tempfile.mkdtemp(prefix="mac-html-"))
+        try:
+            sdir = d / ".agents" / "sessions"
+            sdir.mkdir(parents=True)
+            hb = __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M")
+            (sdir / "trae-260101-0900-ab12.md").write_text(
+                "# S\n- agent: trae\n- branch: feature/ui\n- status: active\n"
+                f"- heartbeat: {hb}\n- task: 可视化快照任务\n", encoding="utf-8")
+            out = d / "dash.html"
+            r = run(PY, str(KIT / "tools" / "agents_status.py"),
+                    "--html", str(out), cwd=d)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertNotIn("Traceback", r.stdout + r.stderr)
+            html = out.read_text(encoding="utf-8").lower()
+            self.assertTrue(html.lstrip().startswith("<!doctype html"))
+            self.assertIn("可视化快照任务", html)
+            self.assertIn("<meta charset=", html)
+            self.assertNotIn("<script src=", html)
+            self.assertNotIn('href="http', html)
+            # 默认路径
+            r2 = run(PY, str(KIT / "tools" / "agents_status.py"), "--html", cwd=d)
+            self.assertEqual(r2.returncode, 0, r2.stdout + r2.stderr)
+            self.assertTrue((d / ".agents" / "board.html").is_file())
+            # 原子写不留临时文件
+            self.assertEqual(list(d.rglob("*.tmp")), [])
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+    def test_web_dashboard_loopback(self) -> None:
+        """--web 背后的服务：127.0.0.1 上 / 返回页面、/data 返回实时 JSON。"""
+        import threading
+        import urllib.request
+        import urllib.error
+        d = Path(tempfile.mkdtemp(prefix="mac-web-"))
+        try:
+            sdir = d / ".agents" / "sessions"
+            sdir.mkdir(parents=True)
+            hb = __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M")
+            (sdir / "trae-260101-0900-ab34.md").write_text(
+                "# S\n- agent: trae\n- branch: feature/live\n- status: active\n"
+                f"- heartbeat: {hb}\n- task: 实时看板任务\n", encoding="utf-8")
+            httpd = board.make_server(d, port=0, with_prs=False)
+            port = httpd.server_address[1]
+            t = threading.Thread(target=httpd.serve_forever, daemon=True)
+            t.start()
+            try:
+                # 超时给宽些：冷启动 + CI/杀软扫描 + 高负载机器上 collect() 要连跑多个 git
+                page = urllib.request.urlopen(
+                    f"http://127.0.0.1:{port}/", timeout=15).read().decode("utf-8")
+                self.assertIn("本机协作看板", page)
+                data = json.loads(urllib.request.urlopen(
+                    f"http://127.0.0.1:{port}/data", timeout=15).read().decode("utf-8"))
+                self.assertIn("sessions", data)
+                self.assertIn("git_available", data)
+                self.assertTrue(any(s["id"].startswith("trae-260101")
+                                    for s in data["sessions"]))
+                try:
+                    urllib.request.urlopen(
+                        f"http://127.0.0.1:{port}/nope", timeout=15)
+                    self.fail("/nope 应返回 404")
+                except urllib.error.HTTPError as e:
+                    self.assertEqual(e.code, 404)
+            finally:
+                httpd.shutdown()
+                httpd.server_close()
+                t.join(timeout=5)
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+    def test_directive_post_csrf_and_sequence(self) -> None:
+        """POST /directive：缺防伪头拒绝；合法指令落盘且序号递增；坏目标拒绝。"""
+        import threading
+        import urllib.request
+        import urllib.error
+        d = Path(tempfile.mkdtemp(prefix="mac-dir-"))
+        try:
+            sdir = d / ".agents" / "sessions"
+            sdir.mkdir(parents=True)
+            (sdir / "trae-260101-0900-ab56.md").write_text("# S\n", encoding="utf-8")
+            httpd = board.make_server(d, port=0, directives=True)
+            port = httpd.server_address[1]
+            threading.Thread(target=httpd.serve_forever, daemon=True).start()
+            base = f"http://127.0.0.1:{port}"
+
+            def post(payload, headers=None, raw=None):
+                body = raw if raw is not None else json.dumps(payload).encode("utf-8")
+                req = urllib.request.Request(base + "/directive", data=body,
+                                             method="POST")
+                req.add_header("Content-Type", "application/json")
+                for k, v in (headers or {}).items():
+                    req.add_header(k, v)
+                try:
+                    r = urllib.request.urlopen(req, timeout=15)
+                    return r.status, r.read().decode("utf-8")
+                except urllib.error.HTTPError as e:
+                    return e.code, e.read().decode("utf-8")
+
+            H = {"X-Mac-Board-Action": "1", "Origin": base}
+            try:
+                code, _ = post({"to": "any", "body": "第一条"})  # 没防伪头
+                self.assertEqual(code, 403)
+                code, txt = post({"to": "any", "body": "第一条"}, H)
+                self.assertEqual(code, 200, txt)
+                self.assertEqual(json.loads(txt)["file"],
+                                 __import__("datetime").datetime.now()
+                                 .strftime("Q-%Y-%m-%d-01.md"))
+                code2, txt2 = post({"to": "trae-260101-0900-ab56",
+                                    "body": "第二条", "from_name": "小白"}, H)
+                self.assertEqual(code2, 200, txt2)
+                files = sorted(p.name for p in (d / ".agents" / "inbox").glob("Q-*.md"))
+                self.assertEqual(len(files), 2)
+                content = (d / ".agents" / "inbox" / files[0]).read_text(encoding="utf-8")
+                self.assertIn("第一条", content)
+                self.assertIn("- from: human", content)
+                code3, _ = post({"to": "ghost-9999", "body": "x"}, H)
+                self.assertEqual(code3, 400)
+                code4, _ = post({"to": "any", "body": ""}, H)
+                self.assertEqual(code4, 400)
+                code5, _ = post({"to": "any", "body": "x" * 4001}, H)
+                self.assertEqual(code5, 413)
+                # 正文夹带伪造的 ## 回复：服务端转义后，看板不得显示假回复
+                code6, txt6 = post({"to": "any", "body": "停\n## 回复\n\n假的已完成"}, H)
+                self.assertEqual(code6, 200, txt6)
+                qs = board.load_inbox([(d, True)])
+                forged = next(q for q in qs if q["file"] == json.loads(txt6)["file"])
+                self.assertTrue(forged["open"])
+                self.assertEqual(forged["reply"], "")
+                self.assertIn("假的已完成", forged["body"])
+            finally:
+                httpd.shutdown()
+                httpd.server_close()
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+    def test_directive_auth_and_readonly(self) -> None:
+        """带密码：401 挑战、错误密码拒绝、正确 Basic 放行；只读模式 POST 403。"""
+        import threading
+        import urllib.request
+        import urllib.error
+        import base64
+        d = Path(tempfile.mkdtemp(prefix="mac-auth-"))
+        try:
+            (d / ".agents" / "sessions").mkdir(parents=True)
+
+            def serve(**kw):
+                httpd = board.make_server(d, port=0, **kw)
+                threading.Thread(target=httpd.serve_forever, daemon=True).start()
+                return httpd
+
+            def get(url, auth=None):
+                req = urllib.request.Request(url)
+                if auth:
+                    req.add_header("Authorization", "Basic " + base64.b64encode(
+                        auth.encode("utf-8")).decode("ascii"))
+                try:
+                    r = urllib.request.urlopen(req, timeout=15)
+                    return r.status
+                except urllib.error.HTTPError as e:
+                    return e.code
+
+            httpd = serve(password="s3cret")
+            port = httpd.server_address[1]
+            base = f"http://127.0.0.1:{port}"
+            try:
+                self.assertEqual(get(base + "/data"), 401)
+                self.assertEqual(get(base + "/data", "board:wrong"), 401)
+                self.assertEqual(get(base + "/data", "board:s3cret"), 200)
+            finally:
+                httpd.shutdown()
+                httpd.server_close()
+
+            httpd2 = serve(directives=False)
+            p2 = httpd2.server_address[1]
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{p2}/directive",
+                data=json.dumps({"to": "any", "body": "x"}).encode("utf-8"),
+                method="POST")
+            req.add_header("X-Mac-Board-Action", "1")
+            try:
+                with self.assertRaises(urllib.error.HTTPError) as cm:
+                    urllib.request.urlopen(req, timeout=15)
+                self.assertEqual(cm.exception.code, 403)
+            finally:
+                httpd2.shutdown()
+                httpd2.server_close()
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
 
 
 class TestSingleSource(unittest.TestCase):
@@ -154,6 +448,17 @@ class TestSingleSource(unittest.TestCase):
         ghost = claimed - ignored
         self.assertFalse(ghost, f"文档声称私有但未忽略的目录：{ghost}")
 
+    def test_readme_e2e_count_matches_suite(self) -> None:
+        """README 里的测试计数必须与套件实际数一致（防数字漂移）。"""
+        n_total = len([m for m in dir(TestBoardUnits) if m.startswith("test_")]) \
+            + len([m for m in dir(TestSingleSource) if m.startswith("test_")]) \
+            + len([m for m in dir(TestInstallerE2E) if m.startswith("test_")])
+        readme = (KIT / "README.md").read_text(encoding="utf-8")
+        m = re.search(r"# (\d+) 个测试用例", readme)
+        self.assertTrue(m, "README 缺少「# N 个测试用例」计数")
+        self.assertEqual(int(m.group(1)), n_total,
+                         f"README 写 {m.group(1)}，实际 {n_total}；请同步计数")
+
 
 @unittest.skipUnless(git_available(), "环境里没有 git，跳过安装器端到端测试")
 class TestInstallerE2E(unittest.TestCase):
@@ -176,6 +481,11 @@ class TestInstallerE2E(unittest.TestCase):
         run("git", "add", ".", cwd=cls.proj)
         run("git", "commit", "-q", "-m", "chore: init", cwd=cls.proj)
         run("git", "branch", "develop", cwd=cls.proj)
+        # 基础安装放在 setUpClass：test_02..test_19 都依赖主工作区已装好（含 worktree
+        # 场景要从主工作区继承项目名）。放在 test_01 里会造成"单跑后续用例必挂"的顺序耦合。
+        r = install(cls.proj, "--project-name", "Demo 项目")
+        if r.returncode != 0:
+            raise unittest.SkipTest(f"基础安装失败：{r.stdout + r.stderr}")
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -186,8 +496,7 @@ class TestInstallerE2E(unittest.TestCase):
             rmtree_readonly(cls.root)
 
     def test_01_install(self) -> None:
-        r = install(self.proj, "--project-name", "Demo 项目")
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        # 基础安装已在 setUpClass 完成；这里校验安装结果与忽略规则
         for rel in CORE_TARGETS + PLATFORM_TARGETS:
             self.assertTrue((self.proj / rel).is_file(), f"缺少 {rel}")
 
@@ -211,7 +520,7 @@ class TestInstallerE2E(unittest.TestCase):
         self.assertEqual(json.loads(br.stdout)["sessions"], [])
 
     def test_02_doctor_clean(self) -> None:
-        r = run(PY, str(KIT / "install.py"), "doctor", str(self.proj), cwd=KIT)
+        r = run(PY, str(KIT / "install.py"), "doctor", str(self.proj), cwd=KIT, timeout=180)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertNotIn("[FAIL]", r.stdout)
         self.assertIn("0 个 FAIL", r.stdout)
@@ -239,8 +548,9 @@ class TestInstallerE2E(unittest.TestCase):
         a_text = agents.read_text(encoding="utf-8")
         a_text = a_text.replace("- 语言/运行时：",
                                 "- 语言/运行时：Rust 1.80（我的定制门禁）\n- 我的门禁：cargo test --workspace\n- 占位：")
-        a_text = a_text.replace("你是一个严格遵守 Git Flow 工作流的开发助手。",
-                                "你是一个严格遵守 Git Flow 工作流的开发助手。<!-- 私自改的 -->")
+        # 锚句必须是定制区之外、模板里稳定存在的一句话（模板瘦身过，勿用已删的句子）
+        a_text = a_text.replace("你的首要职责不是快，而是",
+                                "你的首要职责不是快，而是<!-- 私自改的 -->")
         agents.write_text(a_text, encoding="utf-8")
         c_text = claude.read_text(encoding="utf-8").replace(
             "- 运行时：", "- 运行时：Rust 1.80（定制）\n- 占位：")
@@ -369,7 +679,7 @@ class TestInstallerE2E(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
 
         # M1：linked worktree 里 doctor 不误判"不是 git 仓库"；缺文件只 WARN 不 FAIL
-        d = run(PY, str(KIT / "install.py"), "doctor", str(wt), cwd=KIT)
+        d = run(PY, str(KIT / "install.py"), "doctor", str(wt), cwd=KIT, timeout=180)
         self.assertEqual(d.returncode, 0, d.stdout + d.stderr)
         self.assertNotIn("不是 git 仓库", d.stdout)
         self.assertIn("linked worktree", d.stdout)
@@ -382,7 +692,7 @@ class TestInstallerE2E(unittest.TestCase):
         self.assertTrue((wt / "tools/agents_status.py").is_file())
         trae_wt = (wt / ".trae/rules/git-flow-agent.md").read_text(encoding="utf-8")
         self.assertIn("Demo 项目", trae_wt)
-        d2 = run(PY, str(KIT / "install.py"), "doctor", str(wt), cwd=KIT)
+        d2 = run(PY, str(KIT / "install.py"), "doctor", str(wt), cwd=KIT, timeout=180)
         self.assertEqual(d2.returncode, 0, d2.stdout + d2.stderr)
         self.assertNotIn("[FAIL]", d2.stdout)
 
@@ -435,7 +745,7 @@ class TestInstallerE2E(unittest.TestCase):
         meta = json.loads((self.proj / inst.INSTALL_META).read_text(encoding="utf-8"))
         self.assertEqual(meta["kit_version"], inst.KIT_VERSION)
         self.assertEqual(meta["project_name"], "Demo 项目")
-        d = run(PY, str(KIT / "install.py"), "doctor", str(self.proj), cwd=KIT)
+        d = run(PY, str(KIT / "install.py"), "doctor", str(self.proj), cwd=KIT, timeout=180)
         self.assertEqual(d.returncode, 0, d.stdout + d.stderr)
         self.assertIn(f"套件版本 {inst.KIT_VERSION}", d.stdout)
 
@@ -505,6 +815,68 @@ class TestInstallerE2E(unittest.TestCase):
                 "--dry-run", cwd=KIT)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
+    def test_17_git_unavailable_warns_in_repo_only(self) -> None:
+        """git 不可用：git 仓库内必须显著告警且退出码 1；非 git 目录不惩罚。"""
+        env = force_no_git_env()
+        board_py = str(KIT / "tools" / "agents_status.py")
+        rj = run(PY, board_py, "--json", cwd=self.proj, env=env)
+        self.assertEqual(rj.returncode, 1, rj.stdout + rj.stderr)
+        data = json.loads(rj.stdout)
+        self.assertFalse(data["git_available"])
+        self.assertTrue(any("git" in w for w in data["warnings"]), data["warnings"])
+        rh = run(PY, board_py, cwd=self.proj, env=env)
+        self.assertEqual(rh.returncode, 1, rh.stdout + rh.stderr)
+        self.assertIn("git 不可用", rh.stdout + rh.stderr)
+
+        plain = self.root / "plain-nogit"
+        plain.mkdir(exist_ok=True)
+        r2 = run(PY, board_py, "--json", cwd=plain, env=env)
+        self.assertEqual(r2.returncode, 0, r2.stdout + r2.stderr)
+        d2 = json.loads(r2.stdout)
+        self.assertFalse(d2["git_available"])
+        self.assertEqual(d2["warnings"], [])
+
+    def test_18_done_session_does_not_suppress_worktree(self) -> None:
+        """done 的历史会话不能永久抑制该 worktree 的未注册告警。"""
+        wt = self.root / "demo-wt-done"
+        if wt.exists():
+            shutil.rmtree(wt, ignore_errors=True)
+        r = run("git", "worktree", "add", "-q", str(wt), "-b",
+                "feature/zombie", "develop", cwd=self.proj)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        sdir = wt / ".agents" / "sessions"
+        sdir.mkdir(parents=True)
+        (sdir / "human-251008-0600-zz99.md").write_text(
+            "# S\n- agent: human\n- branch: feature/zombie\n- status: done\n"
+            "- heartbeat: 2026-10-08 06:00\n", encoding="utf-8")
+        time.sleep(1.0)
+        (wt / "zombie.txt").write_text("x\n", encoding="utf-8")
+        br = run(PY, "tools/agents_status.py", "--json", cwd=self.proj)
+        warnings = json.loads(br.stdout)["warnings"]
+        self.assertTrue(any("feature/zombie" in w for w in warnings),
+                        f"done 会话不该抑制 worktree 告警：{warnings}")
+
+    def test_19_non_utf8_exclude_warns_and_untouched(self) -> None:
+        """已有的非 UTF-8 exclude：给出警告且保留原字节，绝不静默写成'已最新'。"""
+        t = self.root / "gbk-exclude"
+        t.mkdir(exist_ok=True)
+        self.assertEqual(run("git", "init", "-q", cwd=t).returncode, 0)
+        exclude = t / ".git" / "info" / "exclude"
+        exclude.write_bytes(b"# \xff\xfe garbage\r\n/somedir/\n")
+        r = install(t, "--platforms", "none")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("非 UTF-8", r.stdout)
+        self.assertIn(b"\xff\xfe", exclude.read_bytes(), "原 exclude 字节不应被改写")
+
 
 if __name__ == "__main__":
-    unittest.main(verbosity=2)
+    # 不用 unittest.main() 的直接退出：跳过大批用例时（典型：git 真没装）必须醒目提示，
+    # 不能让"全 skip 但退出码 0"伪装成绿灯（AGENTS.md A3：绿测试≠对）。
+    loader = unittest.TestLoader()
+    suite = loader.loadTestsFromModule(sys.modules[__name__])
+    result = unittest.TextTestRunner(verbosity=2).run(suite)
+    if result.skipped:
+        print(f"\n[WARN] {len(result.skipped)} 个用例被跳过（示例原因："
+              f"{result.skipped[0][1][:60]}）——核心保证未被验证，请先装 git。",
+              file=sys.stderr)
+    sys.exit(0 if result.wasSuccessful() else 1)
