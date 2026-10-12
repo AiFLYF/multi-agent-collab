@@ -57,7 +57,15 @@ fetch + 扫 open PR  →  看看板和 inbox  →  注册会话文件  →  切 
 →  开发（≤15 分钟更一次心跳）→  跑测试门禁  →  提 PR  →  置 done、写 worklog
 ```
 
-开工一眼看到的看板长这样：
+日常开工最省 token 的看法是一行摘要（无告警就直接开工，有告警才展开）：
+
+```text
+$ python tools/agents_status.py --brief
+OK 看板无告警：活跃2，无失活/未答/worktree 异常，可直接开工
+```
+
+需要完整信息再跑无参数版；给人看用 `--web`（图形化、可下指令）或 `--html`（单文件快照）。
+完整终端看板长这样：
 
 ```text
 【会话】共 2 个，活跃 2，失活 0
@@ -118,6 +126,8 @@ fetch + 扫 open PR  →  看看板和 inbox  →  注册会话文件  →  切 
 | `python install.py uninstall <项目>` | 只移除忽略托管块，文件全部保留 |
 | `python install.py uninstall <项目> --purge-files` | 再删**未被你改过**的套件文件；会话/日志/问事板/D 组条目/备份永不删 |
 | `python tools/agents_status.py` | 看板（`--root` / `--json` / `--prs` / `--stale-min N`） |
+| `python tools/agents_status.py --brief` | **开工协调首选**：一行摘要，没事就 `OK`、有事才点名（约 80 token，rc=0 开工/rc=1 查详情） |
+| `python tools/agents_status.py --version` / `--selfcheck` | 查看版本 / 内置 48 项自测；全部参数看 `--help` |
 | `python tools/agents_status.py --web` | **图形化看板**：浏览器自动打开，5 秒实时刷新，默认仅 127.0.0.1；网页上可直接**对 agent 下指令** |
 | `python tools/agents_status.py --web --bind 0.0.0.0` | 局域网可访问（手机/其他电脑）：必须配 `--no-directives` 只读，或先设密码（见下） |
 | `python tools/agents_status.py --html [路径]` | 自包含 HTML 单文件**快照**（默认 `.agents/board.html`，离线可发可开，加 `--open` 直接打开） |
@@ -274,11 +284,11 @@ multi-agent-collab/
 ```
 
 ```bash
-python tools/agents_status.py --selfcheck   # 看板内置 46 项断言
+python tools/agents_status.py --selfcheck   # 看板内置 48 项断言
 python tests/selftest.py                    # 临时真实 git 仓库端到端演练（含 linked worktree）
 ```
 
-> README 里的用例计数由 `test_readme_e2e_count_matches_suite` 自动核对（看板内置 46 项断言另有独立自测），改了用例数量必须同步改这里。
+> README 里的用例计数由 `test_readme_e2e_count_matches_suite` 自动核对（看板内置 48 项断言另有独立自测），改了用例数量必须同步改这里。
 
 自测覆盖：忽略规则逐条生效、幂等/备份、三个定制区迁移、GBK 旧文件、子目录探测、
 坏心跳与未来时钟语义、worktree 跨区可见且不误报、卸载安全（用户数据不丢）、

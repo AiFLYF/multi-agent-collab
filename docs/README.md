@@ -60,9 +60,12 @@
 ## 查看全景
 
 ```powershell
-python tools/agents_status.py          # 本机全部 worktree 的活跃会话 + 日志 + 未答问题
+python tools/agents_status.py --brief  # 开工首选：一行摘要（OK 即可开工，最省 token）
+python tools/agents_status.py          # 完整看板：本机全部 worktree 的活跃会话 + 日志 + 未答
 ```
 
+- **省 token**：日常开工用 `--brief`（约 80 token，无告警只回一行 OK，rc=1 才展开完整版）；
+  不要为了"看现状"去读 `tools/agents_status.py` 源码——命令输出就是使用契约（AGENTS.md 3.1 接口卡）
 - 在项目**任意子目录**运行都会自动定位到仓库根；也可用 `--root <路径>` 显式指定
 - 看板会聚合主工作区和所有 linked worktree 里的 `.agents/`（同一会话 ID 取最新心跳）
 - 加 `--prs` 可同时只读列出 open PR（gh 不可用时只提示、不报错，退出码不变）
