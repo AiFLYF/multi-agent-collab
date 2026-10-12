@@ -22,6 +22,7 @@ env/
 .workbuddy/
 .agent/
 *.bak-*
+**/HANDOFF-*.md
 
 # ── 操作系统/编辑器杂物 ──────────────────────────────────
 .DS_Store
