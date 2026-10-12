@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>multi-agent-collab — 一个项目，多个 AI，一套交规</title>
+<meta name="description" content="给同一项目里的多个 AI 助手立交规：一份 AGENTS.md 规则总章、一块 .agents/ 共享黑板、一个零依赖看板脚本。不互相覆盖、不重复劳动，人类指令优先级最高。Windows / macOS / Linux，Python 3.8+。">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#060608">
+<link rel="canonical" href="https://aiflyf.github.io/multi-agent-collab/">
+<meta property="og:title" content="multi-agent-collab — 一个项目，多个 AI，一套交规">
+<meta property="og:description" content="让 Claude Code、Codex CLI、OpenCode、Pi、Trae、WorkBuddy 在同一份规则下协同干活：不互相覆盖、不重复劳动；你通过一块网页看板实时指挥。">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://aiflyf.github.io/multi-agent-collab/">
+<meta property="og:site_name" content="multi-agent-collab">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://aiflyf.github.io/multi-agent-collab/assets/board.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="720">
+<meta property="og:image:alt" content="multi-agent-collab 网页看板：实时查看每个 AI 会话的状态">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="multi-agent-collab — 一个项目，多个 AI，一套交规">
+<meta name="twitter:description" content="多 AI 协作交规：一份规则 · 一块黑板 · 一个看板。零依赖，Python 3.8+。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%3E%3Cpath%20d='M12%202v20M2%2012h20M4.9%204.9l14.2%2014.2M19.1%204.9L4.9%2019.1'%20stroke='%2335D9FF'%20stroke-width='2.2'%20stroke-linecap='round'/%3E%3C/svg%3E">
+
+<link rel="stylesheet" href="assets/css/fonts.css">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+<!-- ── 预加载幕布 ─────────────────────────────────────────── -->
+<div id="preloader" aria-hidden="true">
+  <div class="pre-top mono">
+    <span>MULTI-AGENT-COLLAB</span>
+    <span>SYNCING 06 SIGNAL SOURCES · 正在接入六个信号源</span>
+  </div>
+  <div class="pre-mid">
+    <div class="pre-count"><span id="preCount">00</span><em>%</em></div>
+    <div class="pre-dots" id="preDots"></div>
+  </div>
+  <div class="pre-bar"><i id="preBar"></i></div>
+</div>
+
+<!-- ── 氛围层 ─────────────────────────────────────────────── -->
+<div class="orb orb-a" aria-hidden="true"></div>
+<div class="orb orb-b" aria-hidden="true"></div>
+<div class="orb orb-c" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+<div class="vignette" aria-hidden="true"></div>
+<div id="progress" aria-hidden="true"><i id="progressBar"></i></div>
+<div class="c-dot" aria-hidden="true"></div>
+<div class="c-ring" aria-hidden="true"></div>
+
+<a class="mono" href="#content" style="position:absolute;left:-9999px">跳到正文 ↓</a>
+
+<!-- ── 顶栏 ───────────────────────────────────────────────── -->
+<header class="site-head" id="siteHead">
+  <a class="brand" href="#sec-0" data-target="0" data-hover>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M2 12h20M4.9 4.9l14.2 14.2M19.1 4.9L4.9 19.1"/></svg>
+    <b>multi-agent-collab</b>
+    <span>CONVERGENCE</span>
+  </a>
+  <nav class="site-nav mono" aria-label="章节导航">
+    <a href="#sec-0" data-target="0" data-hover><i>00</i>首页</a>
+    <a href="#sec-1" data-target="1" data-hover><i>01</i>是什么</a>
+    <a href="#sec-2" data-target="2" data-hover><i>02</i>事故</a>
+    <a href="#sec-3" data-target="3" data-hover><i>03</i>交规</a>
+    <a href="#sec-4" data-target="4" data-hover><i>04</i>看板</a>
+    <a href="#sec-5" data-target="5" data-hover><i>05</i>拓扑</a>
+    <a href="#sec-6" data-target="6" data-hover><i>06</i>上手</a>
+  </nav>
+  <div class="head-meta mono">
+    <span class="live-dot" aria-hidden="true"></span>
+    <span>V1.4.1</span>
+    <span id="clock">--:--:--</span>
+  </div>
+  <button class="burger" id="burger" aria-label="打开菜单" aria-expanded="false"><span></span><span></span></button>
+</header>
+
+<!-- ── 移动菜单 ───────────────────────────────────────────── -->
+<div class="menu" id="menu" aria-hidden="true">
+  <nav class="menu-nav">
+    <a href="#sec-0" data-target="0"><i>00</i>首页<span>INDEX</span></a>
+    <a href="#sec-1" data-target="1"><i>01</i>它是什么<span>WHAT</span></a>
+    <a href="#sec-2" data-target="2"><i>02</i>规则来自事故<span>LOG</span></a>
+    <a href="#sec-3" data-target="3"><i>03</i>四条交规<span>SOP</span></a>
+    <a href="#sec-4" data-target="4"><i>04</i>网页看板<span>TOWER</span></a>
+    <a href="#sec-5" data-target="5"><i>05</i>协作拓扑<span>MAP</span></a>
+    <a href="#sec-6" data-target="6"><i>06</i>三十秒上手<span>GO</span></a>
+  </nav>
+  <div style="margin-top:34px;display:flex;gap:14px;flex-wrap:wrap">
+    <a class="btn btn-solid" href="https://github.com/AiFLYF/multi-agent-collab" target="_blank" rel="noopener" data-hover>GITHUB ↗</a>
+    <a class="btn btn-ghost" href="https://github.com/AiFLYF/multi-agent-collab#readme" target="_blank" rel="noopener" data-hover>README ↗</a>
+  </div>
+</div>
+
+<!-- ── 侧章节索引 ─────────────────────────────────────────── -->
+<nav class="side-index mono" aria-label="章节索引">
+  <button data-target="0" data-hover><span class="si-num">00</span><span class="si-label">INDEX</span></button>
+  <button data-target="1" data-hover><span class="si-num">01</span><span class="si-label">WHAT</span></button>
+  <button data-target="2" data-hover><span class="si-num">02</span><span class="si-label">LOG</span></button>
+  <button data-target="3" data-hover><span class="si-num">03</span><span class="si-label">SOP</span></button>
+  <button data-target="4" data-hover><span class="si-num">04</span><span class="si-label">TOWER</span></button>
+  <button data-target="5" data-hover><span class="si-num">05</span><span class="si-label">MAP</span></button>
+  <button data-target="6" data-hover><span class="si-num">06</span><span class="si-label">GO</span></button>
+</nav>
+
+<main id="content" tabindex="-1">
+    <!-- ══ 00 / HERO · 汇流 ══════════════════════════════════ -->
+    <section class="sec hero" id="sec-0" data-sec="0" data-acc="#46E0FF">
+      <canvas id="heroScene" role="img" aria-label="六个平台的 AI 信号流以各自的方式汇入中央共享黑板，人类指令以琥珀色脉冲抵达"></canvas>
+
+      <div class="hud hud-tl mono" aria-hidden="true">BOARD <b>.agents/</b> · SYNCED<br>RULEBOOK <b>AGENTS.md</b> v1.4.1</div>
+      <div class="hud hud-tr mono" aria-hidden="true">TRACKS <b>06/06</b> ONLINE<br>NO-LOCK · HEARTBEAT 15M</div>
+      <div class="hud hud-br mono" aria-hidden="true">CROSS-PLATFORM MULTI-AGENT · MIT<br>HEARTBEAT-NO-LOCK · PR-FIRST</div>
+      <div class="console-log" id="heroLog" aria-hidden="true"></div>
+
+      <div class="wrap hero-wrap">
+        <div class="hero-copy">
+          <p class="eyebrow mono">
+            <span class="live-dot" aria-hidden="true"></span>
+            CROSS-PLATFORM MULTI-AGENT · 跨平台多 AI 协作 · v1.4.1 · MIT
+          </p>
+          <h1 class="hero-title" aria-label="六个平台，一个项目。一块黑板，一套规矩。">
+            <span class="ht-row"><span class="ht-line" style="--d:.05s">六个平台，一个项目。</span></span>
+            <span class="ht-row"><span class="ht-line ht-outline" style="--d:.18s">一块黑板，一套规矩。</span></span>
+          </h1>
+          <p class="hero-sub">
+            让 <strong>Claude Code、Codex CLI、OpenCode、Pi、Trae、WorkBuddy</strong> 在不同窗口、不同工具里
+            对着同一份 <code>AGENTS.md</code> 干活：<strong>不互相覆盖、不重复劳动</strong>，
+            谁掉线了一目了然。规则与共享黑板只留本机，看板脚本零依赖，Python 3.8+ 直接跑。
+          </p>
+          <div class="hero-cta">
+            <a class="btn btn-solid" href="https://github.com/AiFLYF/multi-agent-collab" target="_blank" rel="noopener" data-hover>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+              <span>GITHUB 仓库</span>
+            </a>
+            <a class="btn" href="#sec-6" data-target="6" data-hover>30 秒上手</a>
+            <a class="btn" href="https://github.com/AiFLYF/multi-agent-collab#readme" target="_blank" rel="noopener" data-hover>README 文档</a>
+          </div>
+        </div>
+
+        <div class="sources" aria-hidden="true">
+          <span class="src-conv mono">SIX PLATFORMS ▸ ONE BOARD</span>
+          <span class="src-board mono"><b>.agents/</b>&nbsp;共享黑板 · sessions / worklog / inbox</span>
+          <span class="src-hint">点击画面 = 下发一条人类指令</span>
+        </div>
+      </div>
+
+      <div class="wrap strip mono" aria-hidden="true">
+        <span><b>6</b> 平台零配置接入</span>
+        <span><b>0</b> 第三方依赖</span>
+        <span><b>48</b> 项看板断言</span>
+        <span><b>34</b> 项 E2E 测试</span>
+        <span><b>29</b> 条排障手册</span>
+        <span><i>●</i> PYTHON 3.8+ · WIN / MACOS / LINUX</span>
+      </div>
+    </section>
+    <!-- ══ 01 / MANIFESTO ════════════════════════════════════ -->
+    <section class="sec" id="sec-1" data-sec="1" data-acc="#FFB020">
+      <div class="wrap">
+        <div class="sec-head mono" data-reveal><span>01</span>WHAT · 它是什么</div>
+
+        <h2 class="statement">
+          <span class="st-line rv" style="--d:0s">AI 各干各的，</span>
+          <span class="st-line rv" style="--d:.08s">规矩只有<em>一套</em>。</span>
+        </h2>
+
+        <p class="lede rv" style="--d:.2s">
+          它不是又一个 AI 编排器 —— 不负责启动 AI、不给每个 AI 隔离工作区（那是 Claude Squad、Conductor 这类工具的活）。
+          它管<strong>另一半</strong>：让已经在同一个项目里干活的多个 AI 会话互相可见、守同一套规矩、听你指挥。
+        </p>
+
+        <div class="cards-3">
+          <article class="pcard rv" style="--d:0s" data-tilt>
+            <span class="pcard-i mono">PILLAR 01</span>
+            <h3>一份规则总章</h3>
+            <p><code>AGENTS.md</code> / <code>CLAUDE.md</code> 是每个 AI 开工前的必读：先协调再干活、分支怎么切、测试怎么算过、人类指令优先级最高。六个平台各读各的入口，规则只写一遍。</p>
+          </article>
+          <article class="pcard rv" style="--d:.08s" data-tilt>
+            <span class="pcard-i mono">PILLAR 02</span>
+            <h3>一块共享黑板</h3>
+            <p><code>.agents/</code> 就是本机共享记忆：谁在哪个分支干什么、心跳还活不活、有问题问谁、前任走了怎么接手。全是几个 Markdown 小文件，不进 git，切分支不丢。</p>
+          </article>
+          <article class="pcard rv" style="--d:.16s" data-tilt>
+            <span class="pcard-i mono">PILLAR 03</span>
+            <h3>一个看板脚本</h3>
+            <p><code>tools/agents_status.py</code> 零第三方依赖。AI 用它跑一行摘要做开工协调；你用它开<strong>网页指挥台</strong>——实时看每个 AI 状态，直接对它下指令。</p>
+          </article>
+        </div>
+
+        <div class="compare rv" style="--d:.24s">
+          <div class="cmp-head mono">
+            <span></span><span>没有它</span><span class="cmp-hi">有 MULTI-AGENT-COLLAB</span>
+          </div>
+          <div class="cmp-row">
+            <span class="cmp-k mono">文件被覆盖</span>
+            <span class="cmp-a">两个 AI 改了同一处，后保存的把先保存的覆盖掉，白干一半</span>
+            <span class="cmp-b">各写各的小文件：一个会话一个文件、一天一份日志、一个问题一张留言条，天然不撞车</span>
+          </div>
+          <div class="cmp-row">
+            <span class="cmp-k mono">重复劳动</span>
+            <span class="cmp-a">两个 AI 各自去修同一个 bug，改动最后冲突</span>
+            <span class="cmp-b">开工先看板 + 必查 open PR，判活三信号交叉验证</span>
+          </div>
+          <div class="cmp-row">
+            <span class="cmp-k mono">干到一半失踪</span>
+            <span class="cmp-a">窗口被关掉，没人知道它改到哪、下一步是什么</span>
+            <span class="cmp-b">会话注册 + 15 分钟心跳；想接管先声明、等 5 分钟，且保留前任全部提交</span>
+          </div>
+          <div class="cmp-row">
+            <span class="cmp-k mono">想喊停</span>
+            <span class="cmp-a">「先别碰那个文件」没有任何途径告诉它们</span>
+            <span class="cmp-b">人类指令走 inbox，优先级最高，看板实时显示回复闭环</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="marquee" aria-hidden="true">
+        <div class="marquee-track">
+          <div class="marquee-group">
+            <span>AGENTS.md 一份规则</span><i>✳</i>
+            <span>.agents/ 共享黑板</span><i>✳</i>
+            <span>心跳 15 分钟判活</span><i>✳</i>
+            <span>人类指令最高优先级</span><i>✳</i>
+            <span>FEATURE/* 分支铁律</span><i>✳</i>
+            <span>WORKTREE 登记制</span><i>✳</i>
+            <span>PR 合入 DEVELOP</span><i>✳</i>
+            <span>测试门禁不过不提交</span><i>✳</i>
+            <span>接管保留前任提交</span><i>✳</i>
+          </div>
+          <div class="marquee-group">
+            <span>AGENTS.md 一份规则</span><i>✳</i>
+            <span>.agents/ 共享黑板</span><i>✳</i>
+            <span>心跳 15 分钟判活</span><i>✳</i>
+            <span>人类指令最高优先级</span><i>✳</i>
+            <span>FEATURE/* 分支铁律</span><i>✳</i>
+            <span>WORKTREE 登记制</span><i>✳</i>
+            <span>PR 合入 DEVELOP</span><i>✳</i>
+            <span>测试门禁不过不提交</span><i>✳</i>
+            <span>接管保留前任提交</span><i>✳</i>
+          </div>
+        </div>
+      </div>
+    </section>
+    <!-- ══ 02 / INCIDENTS ═══════════════════════════════════ -->
+    <section class="sec" id="sec-2" data-sec="2" data-acc="#FF4B3E">
+      <div class="wrap">
+        <div class="sec-head mono" data-reveal><span>02</span>LOG · 规则来自事故</div>
+
+        <h2 class="statement">
+          <span class="st-line rv" style="--d:0s">每条规矩，</span>
+          <span class="st-line rv" style="--d:.08s">都拿<em>事故</em>换的。</span>
+        </h2>
+
+        <p class="lede rv" style="--d:.16s">
+          规则全部来自真实产品 <a href="https://github.com/AiFLYF/ego-link-esp32" target="_blank" rel="noopener" style="color:var(--cy)">ego-link-esp32</a>
+          （ESP32-S3 教学硬件 + Python 课堂服务器）在 <strong>15+ 个 AI 协作会话</strong>里出过的事故与复盘；
+          抽离为通用套件时，规则正文与排障手册已完全去技术栈化。
+        </p>
+
+        <div class="stat-grid">
+          <div class="stat rv" style="--d:0s"><b><span data-count="15">0</span><em>+</em></b><span>个 AI 协作会话的事故复盘</span></div>
+          <div class="stat rv" style="--d:.06s"><b><span data-count="29">0</span></b><span>条 TROUBLESHOOTING 排障手册</span></div>
+          <div class="stat rv" style="--d:.12s"><b><span data-count="48">0</span></b><span>项看板 selfcheck 内置断言</span></div>
+          <div class="stat rv" style="--d:.18s"><b><span data-count="34">0</span></b><span>项安装器 E2E 测试（真实 git 仓库）</span></div>
+          <div class="stat rv" style="--d:.24s"><b><span data-count="3">0</span><em>×</em><span data-count="4">0</span></b><span>操作系统 × Python 版本的 CI 矩阵</span></div>
+          <div class="stat rv" style="--d:.3s"><b><span data-count="0">0</span></b><span>第三方依赖 · Python 3.8+ 标准库</span></div>
+        </div>
+
+        <div class="incidents rv" style="--d:.24s">
+          <div class="inc-head mono">
+            <span>事故现场 SYMPTOM</span><span style="text-align:center">▸</span><span>写进规矩的姿势 RULE</span>
+          </div>
+          <div class="inc-row">
+            <span class="inc-sym">两个 AI 改了同一个文件，后保存的把先保存的覆盖掉，白干一半</span>
+            <span class="inc-arrow">→</span>
+            <span class="inc-rule"><b>各写各的小文件：</b>一个会话一个文件、一天一份日志、一个问题一张留言条；万一同写，合并取并集，只多不少</span>
+          </div>
+          <div class="inc-row">
+            <span class="inc-sym">两个 AI 各自去修同一个 bug，改动最后冲突</span>
+            <span class="inc-arrow">→</span>
+            <span class="inc-rule"><b>开工先协调：</b>fetch → 看板一行摘要 → 读 inbox → 必查 open PR，再动手</span>
+          </div>
+          <div class="inc-row">
+            <span class="inc-sym">一个 AI 干到一半窗口被关掉，没人知道它改到哪、下一步是什么</span>
+            <span class="inc-arrow">→</span>
+            <span class="inc-rule"><b>会话注册 + 心跳：</b>超 15 分钟算失联；接管要先在 inbox 声明、等 5 分钟无反对，并保留前任全部提交</span>
+          </div>
+          <div class="inc-row">
+            <span class="inc-sym">每个平台的规则文件各写各的，换个 AI 工具就等于没有规则</span>
+            <span class="inc-arrow">→</span>
+            <span class="inc-rule"><b>一份 AGENTS.md：</b>面向 coding agent 的开放格式，六平台各有入口，内容同一份</span>
+          </div>
+          <div class="inc-row">
+            <span class="inc-sym">想中途喊一句「先别碰那个文件」，没有任何途径告诉它们</span>
+            <span class="inc-arrow">→</span>
+            <span class="inc-rule"><b>人类指令通道：</b>从看板网页直接下发，落盘成标准 inbox 留言条，手头任务都要为它让路</span>
+          </div>
+          <div class="inc-row">
+            <span class="inc-sym">看板显示「无活跃会话」，以为没人，上手就是覆盖别人的改动</span>
+            <span class="inc-arrow">→</span>
+            <span class="inc-rule"><b>判活三信号交叉：</b>看板 + git reflog / 文件 mtime + 构建进程，不 registered 的 AI 是隐形的</span>
+          </div>
+        </div>
+      </div>
+    </section>
+    <!-- ══ 03 / RULES ═══════════════════════════════════════ -->
+    <section class="sec" id="sec-3" data-sec="3" data-acc="#C6FF4A">
+      <div class="wrap">
+        <div class="sec-head mono" data-reveal><span>03</span>SOP · 四条交规</div>
+
+        <h2 class="statement">
+          <span class="st-line rv" style="--d:0s">四条交规，</span>
+          <span class="st-line rv" style="--d:.08s">写在 <em>AGENTS.md</em> 里。</span>
+        </h2>
+
+        <div class="rules-grid">
+          <article class="rule rv" style="--d:0s" data-tilt>
+            <span class="rule-r">RULE 01 · 文件纪律</span>
+            <h3>各写各的小文件，不共用大文件</h3>
+            <p>一个会话一个 session 文件、一天一份 worklog、一个问题一张 inbox 留言条，<b>天然不撞车</b>；万一两个会话同时写了同一个文件，合并时取<b>并集</b>——只多不少。</p>
+          </article>
+          <article class="rule rv" style="--d:.06s" data-tilt>
+            <span class="rule-r">RULE 02 · 判活方式</span>
+            <h3>用心跳判断死活，不用锁</h3>
+            <p>锁在 AI 崩溃时会<b>永远卡死</b>。心跳超过 15 分钟算失联；别人想接手，先在 inbox 发接管声明、等 5 分钟无人反对，并<b>保留前任的全部提交</b>。</p>
+          </article>
+          <article class="rule rv" style="--d:.12s" data-tilt>
+            <span class="rule-r">RULE 03 · 交叉验证</span>
+            <h3>看板上没人 ≠ 真的没人</h3>
+            <p>忘了注册会话的 AI 是<b>隐形的</b>。除看板外，还要交叉看 <code>git reflog</code>、文件 mtime、有没有构建进程在跑——三个信号都对上才下手。</p>
+          </article>
+          <article class="rule rv" style="--d:.18s" data-tilt>
+            <span class="rule-r">RULE 04 · 数据边界</span>
+            <h3>协作文件只留本机，不进 git</h3>
+            <p>写进 <code>.git/info/exclude</code>：切分支不丢、不会误提交、不污染团队仓库。代价是没有云端备份——重要节点把 <code>.agents/</code> 拷到仓库外即可。</p>
+          </article>
+        </div>
+
+        <div class="hb-demo rv" style="--d:.24s" aria-label="心跳判活示意：四个会话心跳正常，一个已失联可申请接管">
+          <div class="hb-dots" aria-hidden="true">
+            <span class="hb-cell"><i class="hb-dot"></i>2 分钟前</span>
+            <span class="hb-cell"><i class="hb-dot"></i>5 分钟前</span>
+            <span class="hb-cell"><i class="hb-dot"></i>11 分钟前</span>
+            <span class="hb-cell"><i class="hb-dot"></i>14 分钟前</span>
+            <span class="hb-cell dead"><i class="hb-dot dead"></i>≥ 15 分钟</span>
+          </div>
+          <p class="hb-note">
+            <b>心跳长这样：</b>绿色脉冲 = 会话还活着；灰点静止 = 已失联，别人可以在 inbox 声明接管。
+            跑长任务的 AI 会在 session 文件里写明「预计 HH:MM 回来」，超时才判失活。
+          </p>
+        </div>
+      </div>
+    </section>
+    <!-- ══ 04 / CONSOLE ═════════════════════════════════════ -->
+    <section class="sec" id="sec-4" data-sec="4" data-acc="#35D9FF">
+      <div class="wrap">
+        <div class="sec-head mono" data-reveal><span>04</span>TOWER · 你的指挥台</div>
+
+        <h2 class="statement">
+          <span class="st-line rv" style="--d:0s">AI 看文件，</span>
+          <span class="st-line rv" style="--d:.08s">你看<em>网页</em>。</span>
+        </h2>
+
+        <div class="board-grid">
+          <ul class="board-list">
+            <li class="rv" style="--d:0s"><span class="bl-i">01</span><span><b>每 5 秒自动刷新。</b>每个 AI 一张卡片：哪个平台、在哪个分支、做什么任务、几分钟前还有心跳（绿 = 正常，红 = 失联）。</span></li>
+            <li class="rv" style="--d:.06s"><span class="bl-i">02</span><span><b>问题与交接一眼可见。</b>未答复的 inbox 留言、前任留下的「下一步 / 阻塞点」，不用去翻文件。</span></li>
+            <li class="rv" style="--d:.12s"><span class="bl-i">03</span><span><b>worktree 告警。</b>有 AI 在没登记过的目录里动了手脚，红色告警直接拍在页面上。</span></li>
+            <li class="rv" style="--d:.18s"><span class="bl-i">04</span><span><b>直接对 AI 下指令。</b>在卡片上输入「先停一下，别碰登录模块」——AI 在下个阶段间隙读到并执行，回复实时回到网页，可开桌面通知。<b>人类指令优先级最高。</b></span></li>
+            <li class="rv" style="--d:.24s"><span class="bl-i">05</span><span><b>三档安全。</b>默认只听本机；局域网可以只读大屏，或设密码后可指挥——「对外可写又无密码」的组合会被拒绝启动。</span></li>
+          </ul>
+
+          <figure class="board-figure rv" style="--d:.16s">
+            <div class="bf-bar"><i></i><i></i><i></i><span class="mono">127.0.0.1:8731 · python tools/agents_status.py --web</span></div>
+            <img src="assets/board.png" alt="multi-agent-collab 网页看板：多个 AI 会话卡片、 inbox 与 worktree 面板（演示数据）" width="1280" height="720" loading="lazy">
+            <figcaption class="bf-cap">演示数据 · demo-shop 项目里三个不同平台的会话正在干活</figcaption>
+          </figure>
+        </div>
+
+        <div class="code rv" style="--d:.24s">
+          <div class="code-bar"><i></i><i></i><i></i><span class="fname">terminal · powershell / bash</span><button class="copy" data-copy="board-cmd" data-hover>复制</button></div>
+<pre><code id="board-cmd"><span class="c"># 你和 AI 都能用看板；--web 开图形化指挥台</span>
+<span class="p">$</span> python tools/agents_status.py <span class="m">--web</span>
+
+<span class="c"># 不开服务，只把当前状态存成单文件快照（零外链，可发给别人）</span>
+<span class="p">$</span> python tools/agents_status.py <span class="m">--html</span>
+
+<span class="c"># AI 开工协调用的一行摘要（输出短、省 token）</span>
+<span class="p">$</span> python tools/agents_status.py <span class="m">--brief</span>
+<span class="s">OK 看板无告警：活跃3，无失活/未答/worktree 异常，可直接开工</span></code></pre>
+        </div>
+      </div>
+    </section>
+    <!-- ══ 05 / TOPOLOGY ═════════════════════════════════════ -->
+    <section class="sec" id="sec-5" data-sec="5" data-acc="#A78BFF">
+      <div class="wrap">
+        <div class="sec-head mono" data-reveal><span>05</span>MAP · 协作拓扑</div>
+
+        <h2 class="statement">
+          <span class="st-line rv" style="--d:0s">六种平台，</span>
+          <span class="st-line rv" style="--d:.08s">同一块<em>黑板</em>。</span>
+        </h2>
+
+        <p class="lede rv" style="--d:.16s">
+          Claude Code、Codex CLI、OpenCode、Pi <strong>零配置</strong>自动读根目录 <code>AGENTS.md</code>；
+          Trae 与 WorkBuddy 由安装器生成入口镜像。同一个项目可以混用多个平台——
+          <strong>黑板是同一块，规矩是同一套</strong>。拖拽下面这张图转一转。
+        </p>
+
+        <div class="topo-stage rv" style="--d:.2s">
+          <canvas id="topoScene" role="img" aria-label="协作拓扑图：六个平台的会话节点汇入中央的共享黑板 .agents/，人类节点以金色线路连入"></canvas>
+          <div class="topo-cap mono">
+            <span class="topo-legend">
+              <i>平台会话</i><i class="lg-bb">共享黑板 .agents/</i><i class="lg-am">你 · 人类指令</i>
+            </span>
+            <span>拖拽旋转 · 数据包 = 会话读规则 / 写心跳 / 读指令</span>
+          </div>
+        </div>
+      </div>
+    </section>
+    <!-- ══ 06 / INSTALL ══════════════════════════════════════ -->
+    <section class="sec" id="sec-6" data-sec="6" data-acc="#FFB020">
+      <div class="wrap">
+        <div class="sec-head mono" data-reveal><span>06</span>GO · 三十秒上手</div>
+
+        <h2 class="statement">
+          <span class="st-line rv" style="--d:0s">三十秒，</span>
+          <span class="st-line rv" style="--d:.08s">立好<em>交规</em>。</span>
+        </h2>
+
+        <p class="lede rv" style="--d:.16s">
+          前提只有两个：电脑装了 <strong>Python 3.8+</strong> 和 <strong>git</strong>，项目是 git 仓库。
+          安装器幂等，你定制过的内容（测试命令、构建命令）升级时自动保留。
+        </p>
+
+        <div class="tabs rv" style="--d:.2s">
+          <div class="tab-bar mono" role="tablist" aria-label="安装方式">
+            <button class="tab is-on" role="tab" aria-selected="true" aria-controls="panel-agent" data-tab="agent" data-hover><i>01</i>复制一段话给 AI</button>
+            <button class="tab" role="tab" aria-selected="false" aria-controls="panel-manual" data-tab="manual" data-hover><i>02</i>自己跑一条命令</button>
+            <button class="tab" role="tab" aria-selected="false" aria-controls="panel-verify" data-tab="verify" data-hover><i>03</i>装完验证</button>
+          </div>
+
+          <div class="panel is-on" id="panel-agent" data-panel="agent" role="tabpanel">
+            <div class="code">
+              <div class="code-bar"><i></i><i></i><i></i><span class="fname">发给项目里任意一个 AI</span><button class="copy" data-copy="prompt-agent" data-hover>复制</button></div>
+<pre><code id="prompt-agent">帮我把 multi-agent-collab 套件装到当前项目。
+套件仓库地址：https://github.com/AiFLYF/multi-agent-collab
+1. 先确认 python 和 git 都能运行；不能运行就停下告诉我，不要自行安装任何软件。
+2. 电脑里还没有这个仓库就先 git clone 上面的地址；已经有了就跳过。
+3. 确认当前目录是我的项目根目录，执行 python &lt;套件目录&gt;/install.py install .；
+   成功后再执行 python &lt;套件目录&gt;/install.py doctor .，把体检结果原样发给我。
+除安装器生成的文件外不要动项目里的其他文件，任何报错先停下来问我。</code></pre>
+            </div>
+            <ul class="panel-notes">
+              <li>AI 会自己 clone、安装、跑体检，把结果发给你——<b>不想敲命令的人用这种</b></li>
+              <li>用 fork 的话，把提示词第二行的地址换成你的 fork</li>
+            </ul>
+          </div>
+
+          <div class="panel" id="panel-manual" data-panel="manual" role="tabpanel">
+            <div class="code">
+              <div class="code-bar"><i></i><i></i><i></i><span class="fname">terminal</span><button class="copy" data-copy="cmd-manual" data-hover>复制</button></div>
+<pre><code id="cmd-manual"><span class="c"># 装进任意 git 项目（幂等；先看会改哪些文件不落盘，把 install 换成 install --dry-run）</span>
+<span class="p">$</span> python install.py install /path/to/your-project
+
+<span class="c"># 体检：文件、忽略规则、版本新旧、看板冒烟</span>
+<span class="p">$</span> python install.py doctor /path/to/your-project
+
+<span class="c"># 改完 AGENTS.md 总章后，刷新 WorkBuddy 入口镜像</span>
+<span class="p">$</span> python install.py mirror /path/to/your-project</code></pre>
+            </div>
+            <ul class="panel-notes">
+              <li>Windows PowerShell 写法一样；卸载只移除忽略托管块，文件全部保留</li>
+              <li>不想跑脚本想手工拷贝：README 里有等价的 cp 命令清单</li>
+            </ul>
+          </div>
+
+          <div class="panel" id="panel-verify" data-panel="verify" role="tabpanel">
+            <div class="checks">
+              <p class="ac-title mono">装完之后（3 分钟）</p>
+              <ol>
+                <li><b>①</b> 打开项目里的 <code>AGENTS.md</code> 第 6 节，把示例换成你项目真实的测试 / 构建命令（定制区，升级自动保留）</li>
+                <li><b>②</b> 在项目目录跑一次 <code>python tools/agents_status.py --web</code>，确认看板正常</li>
+                <li><b>③</b> <b>新开一个 AI 对话</b>，问它「你开工前要先做什么」——应答出：先看板、查 inbox、再干活，说明规则已生效</li>
+              </ol>
+            </div>
+          </div>
+        </div>
+
+        <div class="code rv" style="--d:.26s">
+          <div class="code-bar"><i></i><i></i><i></i><span class="fname">命令速查 · 点击行内命令即可复制</span></div>
+          <table class="cmd-table mono">
+            <thead><tr><th style="width:46%">命令</th><th>作用</th></tr></thead>
+            <tbody>
+              <tr><td class="cmd" data-copy="python tools/agents_status.py --brief">python tools/agents_status.py --brief</td><td>一行摘要：无事只回 OK，AI 开工首选</td></tr>
+              <tr><td class="cmd" data-copy="python tools/agents_status.py">python tools/agents_status.py</td><td>完整终端看板</td></tr>
+              <tr><td class="cmd" data-copy="python tools/agents_status.py --web">python tools/agents_status.py --web</td><td>图形化看板，可直接对 AI 下指令</td></tr>
+              <tr><td class="cmd" data-copy="python tools/agents_status.py --html">python tools/agents_status.py --html</td><td>导出零外链单文件 HTML 快照</td></tr>
+              <tr><td class="cmd" data-copy="python tools/agents_status.py --json">python tools/agents_status.py --json</td><td>结构化输出，给脚本用</td></tr>
+              <tr><td class="cmd" data-copy="python tools/agents_status.py --selfcheck">python tools/agents_status.py --selfcheck</td><td>看板内置 48 项断言自检</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="bounds">
+          <div class="bound fit rv" style="--d:0s">
+            <h4>✓ 适合</h4>
+            <ul>
+              <li>同一台电脑、同一个 git 工作区</li>
+              <li>多个 AI 会话（含真人）同时干活</li>
+              <li>不想搭任何服务器、任何账号</li>
+              <li>和 Claude Squad / Conductor 这类编排器叠加使用</li>
+            </ul>
+          </div>
+          <div class="bound think rv" style="--d:.08s">
+            <h4>? 想清楚再用</h4>
+            <ul>
+              <li>跨电脑协作（需要真正的远程同步，本工具刻意不做）</li>
+              <li>AI 之间要毫秒级实时通信（这里最快是「下次工具调用时读到留言」）</li>
+              <li>AI 完全不遵守 AGENTS.md（退回最朴素规矩：同一时间一个 AI 动一个文件）</li>
+              <li>想把 AGENTS.md 提交进仓库全团队共享（本套件取舍：规则本机私有、各自定制）</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="cta-row rv" style="--d:.16s">
+          <a class="btn btn-solid" href="https://github.com/AiFLYF/multi-agent-collab" target="_blank" rel="noopener" data-hover>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+            <span>AIFLYF / MULTI-AGENT-COLLAB</span>
+          </a>
+          <a class="btn btn-ghost" href="https://github.com/AiFLYF/multi-agent-collab/releases" target="_blank" rel="noopener" data-hover><span>RELEASES ↗</span></a>
+          <a class="btn btn-ghost" href="https://github.com/AiFLYF/multi-agent-collab/blob/main/README.md" target="_blank" rel="noopener" data-hover><span>README 全文 ↗</span></a>
+        </div>
+
+        <footer class="site-foot mono">
+          <span>© 2026 AiFLYF — MIT LICENSE · V1.4.1</span>
+          <span class="foot-mid">规则沉淀自 ego-link-esp32 · 15+ AI 协作会话复盘</span>
+          <button class="to-top" data-target="0" data-hover><i>↑</i><span>TOP</span></button>
+        </footer>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- file:// 直开时的说明 -->
+  <div class="file-note mono" role="note">
+    <b>检测到你是直接双击打开的</b>
+    <span>本页信号流与拓扑图全部走本地资源，画布场景可以直接看；仅自托管字体会被浏览器的 file:// 策略拦下，回退为系统字体。想完全还原，在 <code>site/</code> 目录跑 <code>python -m http.server 8080</code> 再访问 <code>http://localhost:8080</code>。</span>
+  </div>
+
+  <!-- three.js：本地 UMD 优先（file:// 可用），CDN 仅作兜底 -->
+  <script src="vendor/three/build/three.min.js"></script>
+  <script>if(typeof THREE==='undefined'){document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"><\/script>')}</script>
+  <script src="assets/js/ui.js" defer></script>
+  <script src="assets/js/hero.js" defer></script>
+  <script src="assets/js/topo.js" defer></script>
+</body>
+</html>
+<body>
+<!--APPEND-->
+</body>
+</html>
