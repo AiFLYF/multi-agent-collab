@@ -15,8 +15,9 @@
 <meta property="og:site_name" content="multi-agent-collab">
 <meta property="og:locale" content="zh_CN">
 <meta property="og:image" content="https://aiflyf.github.io/multi-agent-collab/assets/board.png">
-<meta property="og:image:width" content="1280">
-<meta property="og:image:height" content="720">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1440">
+<meta property="og:image:height" content="900">
 <meta property="og:image:alt" content="multi-agent-collab 网页看板：实时查看每个 AI 会话的状态">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="multi-agent-collab — 一个项目，多个 AI，一套交规">
@@ -51,7 +52,7 @@
 <div class="c-dot" aria-hidden="true"></div>
 <div class="c-ring" aria-hidden="true"></div>
 
-<a class="mono" href="#content" style="position:absolute;left:-9999px">跳到正文 ↓</a>
+<a class="skip mono" href="#content">跳到正文 ↓</a>
 
 <!-- ── 顶栏 ───────────────────────────────────────────────── -->
 <header class="site-head" id="siteHead">
@@ -140,18 +141,37 @@
           </div>
         </div>
 
-        <div class="sources" aria-hidden="true">
-          <span class="src-conv mono">SIX PLATFORMS ▸ ONE BOARD</span>
-          <span class="src-board mono"><b>.agents/</b>&nbsp;共享黑板 · sessions / worklog / inbox</span>
-          <span class="src-hint">点击画面 = 下发一条人类指令</span>
+        <div class="board-card" id="boardCard">
+          <div class="bc-head mono">
+            <span class="bc-title"><b>.agents/</b> 共享黑板</span>
+            <span class="bc-live"><i class="live-dot" aria-hidden="true"></i>LIVE</span>
+          </div>
+          <ul class="bc-rows mono">
+            <li class="bc-row" data-slot="sessions">
+              <span class="bc-k">sessions/</span>
+              <span class="bc-v">3 个会话 · 谁在哪个分支</span>
+            </li>
+            <li class="bc-row" data-slot="worklog">
+              <span class="bc-k">worklog/</span>
+              <span class="bc-v">今日 4 条 · 做完了什么</span>
+            </li>
+            <li class="bc-row" data-slot="inbox">
+              <span class="bc-k">inbox/</span>
+              <span class="bc-v">1 条待答 · 问谁、谁接手</span>
+            </li>
+          </ul>
+          <div class="bc-foot mono">
+            <span class="bc-conv">SIX PLATFORMS ▸ ONE BOARD</span>
+            <span class="bc-hint">点击画面 = 下发一条人类指令</span>
+          </div>
         </div>
       </div>
 
       <div class="wrap strip mono" aria-hidden="true">
-        <span><b>6</b> 平台零配置接入</span>
+        <span><b>6</b> 平台接入 · <b>4</b> 个零配置</span>
         <span><b>0</b> 第三方依赖</span>
         <span><b>48</b> 项看板断言</span>
-        <span><b>34</b> 项 E2E 测试</span>
+        <span><b>34</b> 项自测用例</span>
         <span><b>29</b> 条排障手册</span>
         <span><i>●</i> PYTHON 3.8+ · WIN / MACOS / LINUX</span>
       </div>
@@ -159,7 +179,7 @@
     <!-- ══ 01 / MANIFESTO ════════════════════════════════════ -->
     <section class="sec" id="sec-1" data-sec="1" data-acc="#FFB020">
       <div class="wrap">
-        <div class="sec-head mono" data-reveal><span>01</span>WHAT · 它是什么</div>
+        <div class="sec-head mono" data-reveal><span class="code">01</span><span class="en">WHAT</span><span class="cn">它是什么</span></div>
 
         <h2 class="statement">
           <span class="st-line rv" style="--d:0s">AI 各干各的，</span>
@@ -246,7 +266,7 @@
     <!-- ══ 02 / INCIDENTS ═══════════════════════════════════ -->
     <section class="sec" id="sec-2" data-sec="2" data-acc="#FF4B3E">
       <div class="wrap">
-        <div class="sec-head mono" data-reveal><span>02</span>LOG · 规则来自事故</div>
+        <div class="sec-head mono" data-reveal><span class="code">02</span><span class="en">LOG</span><span class="cn">规则来自事故</span></div>
 
         <h2 class="statement">
           <span class="st-line rv" style="--d:0s">每条规矩，</span>
@@ -260,12 +280,12 @@
         </p>
 
         <div class="stat-grid">
-          <div class="stat rv" style="--d:0s"><b><span data-count="15">0</span><em>+</em></b><span>个 AI 协作会话的事故复盘</span></div>
-          <div class="stat rv" style="--d:.06s"><b><span data-count="29">0</span></b><span>条 TROUBLESHOOTING 排障手册</span></div>
-          <div class="stat rv" style="--d:.12s"><b><span data-count="48">0</span></b><span>项看板 selfcheck 内置断言</span></div>
-          <div class="stat rv" style="--d:.18s"><b><span data-count="34">0</span></b><span>项安装器 E2E 测试（真实 git 仓库）</span></div>
-          <div class="stat rv" style="--d:.24s"><b><span data-count="3">0</span><em>×</em><span data-count="4">0</span></b><span>操作系统 × Python 版本的 CI 矩阵</span></div>
-          <div class="stat rv" style="--d:.3s"><b><span data-count="0">0</span></b><span>第三方依赖 · Python 3.8+ 标准库</span></div>
+          <div class="stat rv" style="--d:0s"><b><span data-count="15">0</span><em>+</em></b><p class="stat-cap">个 AI 协作会话的事故复盘</p></div>
+          <div class="stat rv" style="--d:.06s"><b><span data-count="29">0</span></b><p class="stat-cap">条 TROUBLESHOOTING 排障手册</p></div>
+          <div class="stat rv" style="--d:.12s"><b><span data-count="48">0</span></b><p class="stat-cap">项看板 selfcheck 内置断言</p></div>
+          <div class="stat rv" style="--d:.18s"><b><span data-count="34">0</span></b><p class="stat-cap">项自测用例（含 19 项安装器 E2E）</p></div>
+          <div class="stat rv" style="--d:.24s"><b><span data-count="3">0</span><em>×</em><span data-count="4">0</span></b><p class="stat-cap">操作系统 × Python 版本的 CI 矩阵</p></div>
+          <div class="stat rv" style="--d:.3s"><b><span data-count="0">0</span></b><p class="stat-cap">第三方依赖 · Python 3.8+ 标准库</p></div>
         </div>
 
         <div class="incidents rv" style="--d:.24s">
@@ -308,7 +328,7 @@
     <!-- ══ 03 / RULES ═══════════════════════════════════════ -->
     <section class="sec" id="sec-3" data-sec="3" data-acc="#C6FF4A">
       <div class="wrap">
-        <div class="sec-head mono" data-reveal><span>03</span>SOP · 四条交规</div>
+        <div class="sec-head mono" data-reveal><span class="code">03</span><span class="en">SOP</span><span class="cn">四条交规</span></div>
 
         <h2 class="statement">
           <span class="st-line rv" style="--d:0s">四条交规，</span>
@@ -356,7 +376,7 @@
     <!-- ══ 04 / CONSOLE ═════════════════════════════════════ -->
     <section class="sec" id="sec-4" data-sec="4" data-acc="#35D9FF">
       <div class="wrap">
-        <div class="sec-head mono" data-reveal><span>04</span>TOWER · 你的指挥台</div>
+        <div class="sec-head mono" data-reveal><span class="code">04</span><span class="en">TOWER</span><span class="cn">你的指挥台</span></div>
 
         <h2 class="statement">
           <span class="st-line rv" style="--d:0s">AI 看文件，</span>
@@ -374,7 +394,10 @@
 
           <figure class="board-figure rv" style="--d:.16s">
             <div class="bf-bar"><i></i><i></i><i></i><span class="mono">127.0.0.1:8731 · python tools/agents_status.py --web</span></div>
-            <img src="assets/board.png" alt="multi-agent-collab 网页看板：多个 AI 会话卡片、 inbox 与 worktree 面板（演示数据）" width="1280" height="720" loading="lazy">
+            <button class="bf-zoom" type="button" data-zoom="assets/board.png" aria-label="放大查看看板截图">
+              <img src="assets/board.png" alt="multi-agent-collab 网页看板：多个 AI 会话卡片、inbox 与 worktree 面板（演示数据）" width="1440" height="900" loading="lazy">
+              <span class="bf-zoom-tag mono">点击放大 ⤢</span>
+            </button>
             <figcaption class="bf-cap">演示数据 · demo-shop 项目里三个不同平台的会话正在干活</figcaption>
           </figure>
         </div>
@@ -396,7 +419,7 @@
     <!-- ══ 05 / TOPOLOGY ═════════════════════════════════════ -->
     <section class="sec" id="sec-5" data-sec="5" data-acc="#A78BFF">
       <div class="wrap">
-        <div class="sec-head mono" data-reveal><span>05</span>MAP · 协作拓扑</div>
+        <div class="sec-head mono" data-reveal><span class="code">05</span><span class="en">MAP</span><span class="cn">协作拓扑</span></div>
 
         <h2 class="statement">
           <span class="st-line rv" style="--d:0s">六种平台，</span>
@@ -410,7 +433,10 @@
         </p>
 
         <div class="topo-stage rv" style="--d:.2s">
-          <canvas id="topoScene" role="img" aria-label="协作拓扑图：六个平台的会话节点汇入中央的共享黑板 .agents/，人类节点以金色线路连入"></canvas>
+          <div class="topo-view">
+            <canvas id="topoScene" role="img" aria-label="协作拓扑图：六个平台的会话节点汇入中央的共享黑板 .agents/，人类节点以金色线路连入"></canvas>
+            <div class="topo-labels" id="topoLabels" aria-hidden="true"></div>
+          </div>
           <div class="topo-cap mono">
             <span class="topo-legend">
               <i>平台会话</i><i class="lg-bb">共享黑板 .agents/</i><i class="lg-am">你 · 人类指令</i>
@@ -423,7 +449,7 @@
     <!-- ══ 06 / INSTALL ══════════════════════════════════════ -->
     <section class="sec" id="sec-6" data-sec="6" data-acc="#FFB020">
       <div class="wrap">
-        <div class="sec-head mono" data-reveal><span>06</span>GO · 三十秒上手</div>
+        <div class="sec-head mono" data-reveal><span class="code">06</span><span class="en">GO</span><span class="cn">三十秒上手</span></div>
 
         <h2 class="statement">
           <span class="st-line rv" style="--d:0s">三十秒，</span>
@@ -437,12 +463,12 @@
 
         <div class="tabs rv" style="--d:.2s">
           <div class="tab-bar mono" role="tablist" aria-label="安装方式">
-            <button class="tab is-on" role="tab" aria-selected="true" aria-controls="panel-agent" data-tab="agent" data-hover><i>01</i>复制一段话给 AI</button>
-            <button class="tab" role="tab" aria-selected="false" aria-controls="panel-manual" data-tab="manual" data-hover><i>02</i>自己跑一条命令</button>
-            <button class="tab" role="tab" aria-selected="false" aria-controls="panel-verify" data-tab="verify" data-hover><i>03</i>装完验证</button>
+            <button class="tab is-on" id="tab-agent" role="tab" aria-selected="true" aria-controls="panel-agent" data-tab="agent" data-hover><i>01</i>复制一段话给 AI</button>
+            <button class="tab" id="tab-manual" role="tab" aria-selected="false" aria-controls="panel-manual" data-tab="manual" data-hover><i>02</i>自己跑一条命令</button>
+            <button class="tab" id="tab-verify" role="tab" aria-selected="false" aria-controls="panel-verify" data-tab="verify" data-hover><i>03</i>装完验证</button>
           </div>
 
-          <div class="panel is-on" id="panel-agent" data-panel="agent" role="tabpanel">
+          <div class="tabpanel is-on" id="panel-agent" data-panel="agent" role="tabpanel" aria-labelledby="tab-agent">
             <div class="code">
               <div class="code-bar"><i></i><i></i><i></i><span class="fname">发给项目里任意一个 AI</span><button class="copy" data-copy="prompt-agent" data-hover>复制</button></div>
 <pre><code id="prompt-agent">帮我把 multi-agent-collab 套件装到当前项目。
@@ -453,13 +479,13 @@
    成功后再执行 python &lt;套件目录&gt;/install.py doctor .，把体检结果原样发给我。
 除安装器生成的文件外不要动项目里的其他文件，任何报错先停下来问我。</code></pre>
             </div>
-            <ul class="panel-notes">
+            <ul class="tabpanel-notes">
               <li>AI 会自己 clone、安装、跑体检，把结果发给你——<b>不想敲命令的人用这种</b></li>
               <li>用 fork 的话，把提示词第二行的地址换成你的 fork</li>
             </ul>
           </div>
 
-          <div class="panel" id="panel-manual" data-panel="manual" role="tabpanel">
+          <div class="tabpanel" id="panel-manual" data-panel="manual" role="tabpanel" aria-labelledby="tab-manual">
             <div class="code">
               <div class="code-bar"><i></i><i></i><i></i><span class="fname">terminal</span><button class="copy" data-copy="cmd-manual" data-hover>复制</button></div>
 <pre><code id="cmd-manual"><span class="c"># 装进任意 git 项目（幂等；先看会改哪些文件不落盘，把 install 换成 install --dry-run）</span>
@@ -471,13 +497,13 @@
 <span class="c"># 改完 AGENTS.md 总章后，刷新 WorkBuddy 入口镜像</span>
 <span class="p">$</span> python install.py mirror /path/to/your-project</code></pre>
             </div>
-            <ul class="panel-notes">
+            <ul class="tabpanel-notes">
               <li>Windows PowerShell 写法一样；卸载只移除忽略托管块，文件全部保留</li>
               <li>不想跑脚本想手工拷贝：README 里有等价的 cp 命令清单</li>
             </ul>
           </div>
 
-          <div class="panel" id="panel-verify" data-panel="verify" role="tabpanel">
+          <div class="tabpanel" id="panel-verify" data-panel="verify" role="tabpanel" aria-labelledby="tab-verify">
             <div class="checks">
               <p class="ac-title mono">装完之后（3 分钟）</p>
               <ol>
@@ -550,15 +576,17 @@
     <span>本页信号流与拓扑图全部走本地资源，画布场景可以直接看；仅自托管字体会被浏览器的 file:// 策略拦下，回退为系统字体。想完全还原，在 <code>site/</code> 目录跑 <code>python -m http.server 8080</code> 再访问 <code>http://localhost:8080</code>。</span>
   </div>
 
+  <!-- 看板截图放大 -->
+  <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="看板截图放大" hidden>
+    <button class="lb-close mono" id="lbClose" type="button">关闭 ESC ✕</button>
+    <img src="assets/board.png" alt="multi-agent-collab 网页看板全图：活跃会话卡片、指令与回复、worktree 面板（演示数据）">
+  </div>
+
   <!-- three.js：本地 UMD 优先（file:// 可用），CDN 仅作兜底 -->
   <script src="vendor/three/build/three.min.js"></script>
   <script>if(typeof THREE==='undefined'){document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"><\/script>')}</script>
   <script src="assets/js/ui.js" defer></script>
   <script src="assets/js/hero.js" defer></script>
   <script src="assets/js/topo.js" defer></script>
-</body>
-</html>
-<body>
-<!--APPEND-->
 </body>
 </html>
