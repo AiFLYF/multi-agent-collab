@@ -117,7 +117,6 @@
       burger.setAttribute('aria-expanded', open ? 'true' : 'false');
     });
   }
-
   /* ── 揭示动画 ────────────────────────────────────────────── */
   var rvEls = $$('.rv');
   if ('IntersectionObserver' in window && !reduceMotion) {
@@ -224,10 +223,43 @@
         t.classList.toggle('is-on', on);
         t.setAttribute('aria-selected', on ? 'true' : 'false');
       });
-      $$('.panel').forEach(function (p) {
+      $$('.tabpanel').forEach(function (p) {
         p.classList.toggle('is-on', p.getAttribute('data-panel') === tab.getAttribute('data-tab'));
       });
     });
+  });
+
+  /* ── 看板截图放大 ────────────────────────────────────────── */
+  var lightbox = $('#lightbox');
+  var lbClose = $('#lbClose');
+  var lbTrigger = null;
+  function openLightbox(trigger) {
+    if (!lightbox) return;
+    lbTrigger = trigger || null;
+    lightbox.hidden = false;
+    body.classList.add('lb-open');
+    if (lbClose) lbClose.focus();
+  }
+  function closeLightbox() {
+    if (!lightbox || lightbox.hidden) return;
+    lightbox.hidden = true;
+    body.classList.remove('lb-open');
+    if (lbTrigger) lbTrigger.focus();
+    lbTrigger = null;
+  }
+  $$('[data-zoom]').forEach(function (el) {
+    el.addEventListener('click', function () { openLightbox(el); });
+  });
+  if (lightbox) {
+    lightbox.addEventListener('click', function (e) {
+      if (e.target === lightbox) closeLightbox();      /* 点背景关闭，点图不关 */
+    });
+  }
+  if (lbClose) lbClose.addEventListener('click', closeLightbox);
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    closeLightbox();
+    closeMenu();
   });
 
   /* ── 自定义光标 ──────────────────────────────────────────── */
