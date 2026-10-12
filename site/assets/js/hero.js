@@ -178,11 +178,39 @@
     ctx.restore();
   }
 
+  /* ── 控制台日志（DOM，hero 左下） ────────────────────────── */
+  var logBox = document.getElementById('heroLog');
+  var LOG_POOL = [
+    ['ok', 'WB0-261012-2055 ▸ 心跳 2m · feature/landing-page'],
+    ['ok', 'CDX-261012-1812 ▸ 读规则 · AGENTS.md §3'],
+    ['ok', 'CLD-261012-0910 ▸ 写会话 · sessions/claude-0910.md'],
+    ['ok', 'PI0-261011-2230 ▸ 读留言 · Q-2026-10-12-02 已答'],
+    ['ok', 'TR4-261012-0405 ▸ 双写忽略 · worktree feature/coupon'],
+    ['hu', '▲ HUMAN ▸ 先停一下，别碰登录模块'],
+    ['ok', 'OPC-261012-1245 ▸ 接管声明 · 等 5 分钟无反对'],
+    ['ok', 'CLD-261012-0910 ▸ 开 PR · feature/order-api ▸ develop']
+  ];
+  var logIdx = Math.floor(Math.random() * LOG_POOL.length);
+  function logLine(cls, text) {
+    if (!logBox) return;
+    var d = document.createElement('div');
+    var now = new Date();
+    var t = ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2) + ':' + ('0' + now.getSeconds()).slice(-2);
+    d.innerHTML = '<span class="t">' + t + '</span>  <span class="' + cls + '">' + text + '</span>';
+    logBox.appendChild(d);
+    while (logBox.children.length > 3) logBox.removeChild(logBox.firstChild);
+    requestAnimationFrame(function () { d.classList.add('show'); });
+  }
+  setInterval(function () {
+    var e = LOG_POOL[logIdx % LOG_POOL.length];
+    logIdx++;
+    if (e[0] !== 'hu') logLine(e[0], e[1]);
+  }, 2600);
+
   /* ── 人类指令：琥珀脉冲 ──────────────────────────────────── */
   var dir = { active: false, t: 0, next: 3.5 };
   var ripples = [];
   var boost = 0;                 /* 指令广播：六流齐亮 */
-  var logLine = function () {};  /* 由下方控制台日志实现覆盖 */
 
   function fireDirective() {
     if (dir.active) return;
@@ -383,35 +411,6 @@
     }
     ctx.restore();
   }
-
-  /* ── 控制台日志（DOM，hero 左下） ────────────────────────── */
-  var logBox = document.getElementById('heroLog');
-  var LOG_POOL = [
-    ['ok', 'WB0-261012-2055 ▸ 心跳 2m · feature/landing-page'],
-    ['ok', 'CDX-261012-1812 ▸ 读规则 · AGENTS.md §3'],
-    ['ok', 'CLD-261012-0910 ▸ 写会话 · sessions/claude-0910.md'],
-    ['ok', 'PI0-261011-2230 ▸ 读留言 · Q-2026-10-12-02 已答'],
-    ['ok', 'TR4-261012-0405 ▸ 双写忽略 · worktree feature/coupon'],
-    ['hu', '▲ HUMAN ▸ 先停一下，别碰登录模块'],
-    ['ok', 'OPC-261012-1245 ▸ 接管声明 · 等 5 分钟无反对'],
-    ['ok', 'CLD-261012-0910 ▸ 开 PR · feature/order-api ▸ develop']
-  ];
-  var logIdx = Math.floor(Math.random() * LOG_POOL.length);
-  logLine = function (cls, text) {
-    if (!logBox) return;
-    var d = document.createElement('div');
-    var now = new Date();
-    var t = ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2) + ':' + ('0' + now.getSeconds()).slice(-2);
-    d.innerHTML = '<span class="t">' + t + '</span>  <span class="' + cls + '">' + text + '</span>';
-    logBox.appendChild(d);
-    while (logBox.children.length > 3) logBox.removeChild(logBox.firstChild);
-    requestAnimationFrame(function () { d.classList.add('show'); });
-  };
-  setInterval(function () {
-    var e = LOG_POOL[logIdx % LOG_POOL.length];
-    logIdx++;
-    if (e[0] !== 'hu') logLine(e[0], e[1]);
-  }, 2600);
 
   /* ── 主循环 ──────────────────────────────────────────────── */
   var last = performance.now();

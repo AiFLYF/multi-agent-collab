@@ -1,6 +1,6 @@
 /* ============================================================
  * ui.js — 页面交互层：预加载幕布 / 导航 / 揭示动画 / 计数器 /
- *          卡片倾斜 / 代码复制 / 标签页 / 自定义光标
+ *          卡片倾斜 / 代码复制 / 标签页 / 灯箱 / 自定义光标
  * 无依赖，file:// 与 GitHub Pages 均可运行。
  * ============================================================ */
 (function () {
@@ -9,62 +9,109 @@
   var root = document.documentElement;
   var body = document.body;
   root.className += ' js';
+  body.className += ' is-booting';              /* 幕布期间锁滚动 */
   if (location.protocol === 'file:') body.className += ' from-file';
+
+  /* 解锁兜底放在最前面：后面任何一步抛异常，都不许把页面关在幕布后面 */
+  var unlocked = false;
+  function unlockPage() {
+    if (unlocked) return;
+    unlocked = true;
+    body.classList.remove('is-booting');
+    body.classList.add('is-loaded');
+  }
+  setTimeout(unlockPage, 4000);
 
   var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var $ = function (s, c) { return (c || document).querySelector(s); };
   var $$ = function (s, c) { return Array.prototype.slice.call((c || document).querySelectorAll(s)); };
+  var srLive = $('#srLive');
+  function announce(msg) {
+    if (!srLive) return;
+    srLive.textContent = '';
+    setTimeout(function () { srLive.textContent = msg; }, 40);
+  }
 
   /* ── 顶栏时钟 ────────────────────────────────────────────── */
   var clockEl = $('#clock');
-  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
   function tickClock() {
     var d = new Date();
-    if (clockEl) clockEl.textContent = pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+    if (clockEl) clockEl.textContent = pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds());
   }
   tickClock();
   setInterval(tickClock, 1000);
 
-  /* ── 预加载幕布 ──────────────────────────────────────────── */
+  /* ── 预加载幕布 ────────────────────────────────────────────
+   * 场景（hero/topo）在同一批 defer 里同步就绪，如果立刻掀幕只会闪一下，
+   * 观众连字都没看清。所以设一个「最短展示时长」，并让进度永不停：
+   * 前段线性爬到 0.9，之后按指数继续缓慢爬升 —— 看着像在干活，不像卡死。
+   * 任何异常都有兜底，绝不把页面关在幕布后面。
+   */
+  var PRELOAD_MIN = 900;                 /* 最短展示时长，与 CSS 的 --pre-dur 一致 */
+  var PRELOAD_MAX = 2600;                /* 场景迟迟不就绪的兜底 */
   var preCount = $('#preCount');
-  var preBar = $('#preBar');
-  var preDotsBox = $('#preDots');
-  var dots = [];
-  if (preDotsBox) {
-    for (var i = 0; i < 6; i++) {
-      var d = document.createElement('i');
-      preDotsBox.appendChild(d);
-      dots.push(d);
+  var preStageEl = $('#preStage');
+  (function buildDots() {
+    var box = $('#preDots');
+    if (!box) return;
+    for (var i = 0; i < 6; i++) box.appendChild(document.createElement('i'));
+  })();
+
+  var STAGES = [
+    [0.00, 'BOOTING · 初始化画布'],
+    [0.20, 'SYNCING · 接入六个信号源'],
+    [0.50, 'CONVERGING · 汇入共享黑板'],
+    [0.82, 'READY · 规矩就位']
+  ];
+  var curStage = '';
+  /* 进度环 / 进度条 / 六个信号点由 CSS 动画驱动（见 style.css 的 --pre-dur），
+     这里只更新数字与阶段文案 —— 主线程被脚本占住时，视觉也不会停。 */
+  function setPre(p) {
+    p = Math.max(0, Math.min(1, p));
+    if (preCount) preCount.textContent = pad2(Math.round(p * 100));
+    for (var s = 0; s < STAGES.length; s++) {
+      if (p >= STAGES[s][0] && curStage !== STAGES[s][1]) {
+        curStage = STAGES[s][1];
+        if (preStageEl) preStageEl.textContent = curStage;
+      }
     }
   }
   var booted = false;
+  var preTimer = null;
   var preStart = performance.now();
-  function setPre(p) {
-    if (preCount) preCount.textContent = ('0' + Math.floor(p * 100)).slice(-2);
-    if (preBar) preBar.style.transform = 'scaleX(' + p + ')';
-    var lit = Math.floor(p * dots.length);
-    for (var k = 0; k < dots.length; k++) dots[k].classList.toggle('on', k < lit);
-  }
+  var firstFrameAt = null;      /* 第一帧真正画出来的时刻 */
+  requestAnimationFrame(function () { firstFrameAt = performance.now(); });
   function revealPage() {
     if (booted) return;
     booted = true;
+    if (preTimer) { clearInterval(preTimer); preTimer = null; }
     setPre(1);
-    body.classList.add('is-loaded');
+    unlockPage();
   }
-  function preLoop() {
+  /* 进度用 setInterval 驱动而不是 requestAnimationFrame：rAF 在后台标签页
+     会完全停摆；定时器最差只是降频，对「加载指示器」来说必须一直在走。
+     而「最短展示时长」从第一帧真正画出来开始算 —— CSS 进度动画也是那一刻
+     起跑的，两者对齐，首屏绘制再晚也一定看得到进度走完。 */
+  function preTick() {
     if (booted) return;
-    var t = (performance.now() - preStart) / 1000;
-    var sceneReady = window.__sceneBoot === 'ready' || window.__sceneBoot === 'partial';
-    // 缓慢爬升的假进度（永不静止，用户不会以为卡死）
-    var p = Math.min(t / (t + 1.6), 0.92);
+    var now = performance.now();
+    var elapsed = now - preStart;                                   /* 脚本已运行多久 */
+    var shown = firstFrameAt ? now - firstFrameAt : elapsed;        /* 幕布已可见多久 */
+    var ready = window.__sceneBoot === 'ready' || window.__sceneBoot === 'partial';
+    var p = shown < PRELOAD_MIN
+      ? (shown / PRELOAD_MIN) * 0.9
+      : 0.9 + 0.1 * (1 - Math.exp(-(shown - PRELOAD_MIN) / 2600));
     setPre(p);
-    if (sceneReady || t > 4.5 || reduceMotion) {
+    if ((ready && shown >= PRELOAD_MIN) ||
+        (!ready && elapsed >= PRELOAD_MAX) ||
+        (reduceMotion && shown > 160)) {
       revealPage();
-      return;
     }
-    requestAnimationFrame(preLoop);
   }
-  requestAnimationFrame(preLoop);
+  setPre(0);
+  preTimer = setInterval(preTick, 40);
+  setTimeout(revealPage, PRELOAD_MAX + 1800);    /* 再兜一层：确保进度条走到 100% */
 
   /* ── 滚动：进度条 + 顶栏实心化 ───────────────────────────── */
   var progressBar = $('#progressBar');
@@ -116,7 +163,14 @@
       burger.classList.toggle('open', open);
       burger.setAttribute('aria-expanded', open ? 'true' : 'false');
     });
+    /* 点菜单外区域也收起 */
+    document.addEventListener('click', function (e) {
+      if (!menu.classList.contains('open')) return;
+      if (menu.contains(e.target) || burger.contains(e.target)) return;
+      closeMenu();
+    });
   }
+
   /* ── 揭示动画 ────────────────────────────────────────────── */
   var rvEls = $$('.rv');
   if ('IntersectionObserver' in window && !reduceMotion) {
@@ -181,14 +235,19 @@
     });
   }
 
-  /* ── 复制（代码块 + 命令表） ─────────────────────────────── */
+  /* ── 复制（代码块按钮 + 命令表单元格） ─────────────────────
+   * 按钮显示「已复制 ✓」；表格单元格本身没有按钮结构，
+   * 改用 .copied 类改写 ::after，同时给读屏报一句。
+   */
   function copyText(text, btn) {
     function ok() {
-      if (!btn) return;
-      var old = btn.textContent;
-      btn.textContent = '已复制 ✓';
-      btn.style.color = 'var(--lm)';
-      setTimeout(function () { btn.textContent = old; btn.style.color = ''; }, 1400);
+      if (btn) {
+        var old = btn.textContent;
+        btn.textContent = '已复制 ✓';
+        btn.style.color = 'var(--cy)';
+        setTimeout(function () { btn.textContent = old; btn.style.color = ''; }, 1400);
+      }
+      announce('已复制到剪贴板');
     }
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(ok, function () { fallback(); });
@@ -211,23 +270,45 @@
     });
   });
   $$('.cmd-table td.cmd[data-copy]').forEach(function (td) {
-    td.addEventListener('click', function () { copyText(td.getAttribute('data-copy'), null); });
-  });
-
-  /* ── 标签页 ──────────────────────────────────────────────── */
-  var tabs = $$('.tab');
-  tabs.forEach(function (tab) {
-    tab.addEventListener('click', function () {
-      tabs.forEach(function (t) {
-        var on = t === tab;
-        t.classList.toggle('is-on', on);
-        t.setAttribute('aria-selected', on ? 'true' : 'false');
-      });
-      $$('.tabpanel').forEach(function (p) {
-        p.classList.toggle('is-on', p.getAttribute('data-panel') === tab.getAttribute('data-tab'));
-      });
+    td.setAttribute('role', 'button');
+    td.setAttribute('tabindex', '0');
+    var timer = null;
+    function flash() {
+      clearTimeout(timer);
+      td.classList.add('copied');
+      timer = setTimeout(function () { td.classList.remove('copied'); }, 1400);
+    }
+    td.addEventListener('click', function () { copyText(td.getAttribute('data-copy'), null); flash(); });
+    td.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); td.click(); }
     });
   });
+
+  /* ── 标签页（点击 + 左右方向键，符合 ARIA tabs 模式） ────── */
+  var tabs = $$('.tab');
+  var panels = $$('.tabpanel');
+  function selectTab(i, focus) {
+    tabs.forEach(function (t, k) {
+      var on = k === i;
+      t.classList.toggle('is-on', on);
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+      t.setAttribute('tabindex', on ? '0' : '-1');
+    });
+    panels.forEach(function (p) {
+      p.classList.toggle('is-on', p.getAttribute('data-panel') === tabs[i].getAttribute('data-tab'));
+    });
+    if (focus) tabs[i].focus();
+  }
+  tabs.forEach(function (tab, i) {
+    tab.addEventListener('click', function () { selectTab(i, false); });
+    tab.addEventListener('keydown', function (e) {
+      var d = e.key === 'ArrowRight' ? 1 : (e.key === 'ArrowLeft' ? -1 : 0);
+      if (!d) return;
+      e.preventDefault();
+      selectTab((i + d + tabs.length) % tabs.length, true);
+    });
+  });
+  selectTab(0, false);
 
   /* ── 看板截图放大 ────────────────────────────────────────── */
   var lightbox = $('#lightbox');
@@ -239,6 +320,7 @@
     lightbox.hidden = false;
     body.classList.add('lb-open');
     if (lbClose) lbClose.focus();
+    announce('看板截图已放大，按 Escape 关闭');
   }
   function closeLightbox() {
     if (!lightbox || lightbox.hidden) return;
@@ -256,11 +338,53 @@
     });
   }
   if (lbClose) lbClose.addEventListener('click', closeLightbox);
+  /* Esc 关弹层；灯箱打开时把 Tab 圈在里面 */
   document.addEventListener('keydown', function (e) {
-    if (e.key !== 'Escape') return;
-    closeLightbox();
-    closeMenu();
+    if (e.key === 'Escape') { closeLightbox(); closeMenu(); return; }
+    if (e.key !== 'Tab' || !lightbox || lightbox.hidden) return;
+    var f = $$('button, [href], [tabindex]:not([tabindex="-1"])', lightbox);
+    if (!f.length) return;
+    var first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) { last.focus(); e.preventDefault(); }
+    else if (!e.shiftKey && document.activeElement === last) { first.focus(); e.preventDefault(); }
   });
+
+  /* ── 第 05 章的 WebGL 按需加载 ─────────────────────────────
+   * three.js 是 712KB，放在首屏关键路径上会占住主线程（实测把加载
+   * 幕布的计数都卡成 00）。改成滚到第 05 章前 1.5 屏才开始加载，
+   * 首屏只剩 ui.js + hero.js 两个小文件。
+   */
+  var topoState = 'idle';
+  function loadTopo() {
+    if (topoState !== 'idle') return;
+    topoState = 'loading';
+    function injectTopo() {
+      var t = document.createElement('script');
+      t.src = 'assets/js/topo.js';
+      t.onerror = function () { document.documentElement.className += ' no-webgl'; };
+      document.body.appendChild(t);
+    }
+    var local = document.createElement('script');
+    local.src = 'vendor/three/build/three.min.js';
+    local.onload = function () { topoState = 'ready'; injectTopo(); };
+    local.onerror = function () {                     /* 本地缺失时退回 CDN */
+      var cdn = document.createElement('script');
+      cdn.src = 'https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js';
+      cdn.onload = function () { topoState = 'ready'; injectTopo(); };
+      cdn.onerror = function () { topoState = 'failed'; document.documentElement.className += ' no-webgl'; };
+      document.body.appendChild(cdn);
+    };
+    document.body.appendChild(local);
+  }
+  var sec5 = document.getElementById('sec-5');
+  if (sec5 && 'IntersectionObserver' in window) {
+    var tio = new IntersectionObserver(function (es) {
+      if (es[0].isIntersecting) { tio.disconnect(); loadTopo(); }
+    }, { rootMargin: '150% 0px' });
+    tio.observe(sec5);
+  } else {
+    loadTopo();
+  }
 
   /* ── 自定义光标 ──────────────────────────────────────────── */
   var dot = $('.c-dot'), ring = $('.c-ring');
