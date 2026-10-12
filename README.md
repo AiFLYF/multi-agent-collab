@@ -4,7 +4,7 @@
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](#)
 [![deps](https://img.shields.io/badge/dependencies-none-success)](#)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![changelog](https://img.shields.io/badge/changelog-1.1.0-orange)](CHANGELOG.md)
+[![changelog](https://img.shields.io/badge/changelog-1.3.1-orange)](CHANGELOG.md)
 
 让**同一台电脑上的多个 AI 编码会话**（Trae / WorkBuddy / Claude Code，也可以是真人）
 在**同一个 git 项目**里并行干活——互不覆盖、不撞车、走了能交接。
@@ -102,6 +102,9 @@ fetch + 扫 open PR  →  看看板和 inbox  →  注册会话文件  →  切 
   切分支刷新 mtime 不会误报）
 - 损坏/乱码/未来时间的心跳不会让看板崩，按失活处理并给可读提示
 - `--prs` 可附带只读列出 open PR；`--json` 供脚本使用；退出码 0/1 可当开工门禁
+- **给人看的两种模式（不影响 agent 用 JSON/终端）**：`--web` 起一个只监听
+  127.0.0.1 的本地网页，浏览器自动打开、5 秒实时刷新；`--html` 导出零外链单文件快照，
+  可直接发给别人或离线打开。两种模式与 agent 共用同一份数据口径，只读不写会话文件
 
 ---
 
@@ -110,11 +113,34 @@ fetch + 扫 open PR  →  看看板和 inbox  →  注册会话文件  →  切 
 | 命令 | 作用 |
 |---|---|
 | `python install.py install <项目>` | 安装 / 升级（幂等，定制区自动迁移） |
-| `python install.py doctor <项目>` | 体检：文件、忽略规则、版本新旧、看板双模式 |
+| `python install.py doctor <项目>` | 体检：文件、忽略规则、版本新旧、看板冒烟 |
 | `python install.py mirror <项目>` | 改完 AGENTS.md 后刷新 WorkBuddy 镜像 |
 | `python install.py uninstall <项目>` | 只移除忽略托管块，文件全部保留 |
 | `python install.py uninstall <项目> --purge-files` | 再删**未被你改过**的套件文件；会话/日志/问事板/D 组条目/备份永不删 |
 | `python tools/agents_status.py` | 看板（`--root` / `--json` / `--prs` / `--stale-min N`） |
+| `python tools/agents_status.py --web` | **图形化看板**：浏览器自动打开，5 秒实时刷新，默认仅 127.0.0.1；网页上可直接**对 agent 下指令** |
+| `python tools/agents_status.py --web --bind 0.0.0.0` | 局域网可访问（手机/其他电脑）：必须配 `--no-directives` 只读，或先设密码（见下） |
+| `python tools/agents_status.py --html [路径]` | 自包含 HTML 单文件**快照**（默认 `.agents/board.html`，离线可发可开，加 `--open` 直接打开） |
+
+**网页指挥 agent / 局域网访问安全档**：
+
+```powershell
+# 仅本机（默认）：可直接在网页发指令
+python tools/agents_status.py --web
+
+# 局域网只读大屏：能看不能动
+python tools/agents_status.py --web --bind 0.0.0.0 --no-directives
+
+# 局域网可指挥：先设密码（浏览器弹登录框，用户名任意）
+$env:MULTI_AGENT_BOARD_PASSWORD = "你的密码"
+python tools/agents_status.py --web --bind 0.0.0.0
+```
+
+"对外可写又无密码"会被拒绝启动。HTTP 是明文，仅限可信 WiFi/VPN；外网安全访问用 SSH 端口转发
+（`ssh -L 8731:127.0.0.1:8731 用户@电脑`，不开 0.0.0.0）。一键只读开关：环境变量
+`MULTI_AGENT_BOARD_READONLY=1`。网页发的指令就是 `.agents/inbox/` 里 `from: human` 的标准
+问事板文件，agent 按 AGENTS.md 规程在阶段间隙读取并把回复写回同一文件，页面实时显示并可
+弹桌面通知；agent 空闲时网页提供「复制提醒」一句话，粘进对话框即可唤醒。
 
 安装器的关键保证：
 
@@ -243,14 +269,16 @@ multi-agent-collab/
 ├── docs/
 │   ├── README.md  TROUBLESHOOTING.md
 │   └── examples/               # 会话/问事板填法 + 4 条 D 组写法范例
-├── tests/selftest.py           # 19 个端到端用例
-└── .github/workflows/selftest.yml  # 3 系统 × 3 Python 版本 CI
+├── tests/selftest.py           # 33 个测试用例（14 单元 + 19 安装器 E2E）
+└── .github/workflows/selftest.yml  # 3 系统 × 4 Python 版本 CI
 ```
 
 ```bash
-python tools/agents_status.py --selfcheck   # 看板内置 24 项断言
+python tools/agents_status.py --selfcheck   # 看板内置 46 项断言
 python tests/selftest.py                    # 临时真实 git 仓库端到端演练（含 linked worktree）
 ```
+
+> README 里的用例计数由 `test_readme_e2e_count_matches_suite` 自动核对（看板内置 46 项断言另有独立自测），改了用例数量必须同步改这里。
 
 自测覆盖：忽略规则逐条生效、幂等/备份、三个定制区迁移、GBK 旧文件、子目录探测、
 坏心跳与未来时钟语义、worktree 跨区可见且不误报、卸载安全（用户数据不丢）、

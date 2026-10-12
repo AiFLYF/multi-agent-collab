@@ -51,7 +51,9 @@
 ## 问事板 `inbox/Q-YYYY-MM-DD-NN.md`
 
 - 一个文件一件事；`to:` 写会话 ID 或 `any`
-- status：`open` → `answered`（回复写进同文件 `## 回复`）
+- `from: human*` 的文件是**人类用户从看板网页发的指令**（不是 agent 留言），
+  按用户最高优先级处理，回复仍写回同一文件
+- status：`open` → `answered`（回复写在同文件 `## 回复`）
 - 提问三要素：**背景 / 我已尝试 / 需要你做什么**
 - 开工先看有没有点名自己的 open 问题；离开前把能答的答掉
 
@@ -65,6 +67,17 @@ python tools/agents_status.py          # 本机全部 worktree 的活跃会话 +
 - 看板会聚合主工作区和所有 linked worktree 里的 `.agents/`（同一会话 ID 取最新心跳）
 - 加 `--prs` 可同时只读列出 open PR（gh 不可用时只提示、不报错，退出码不变）
 - 退出码 0 = 无告警，1 = 有失活会话/未答问题/未注册 worktree，可当开工门禁
+- **给人看（不影响 agent）**：`--web` 启动浏览器图形化实时看板
+  （5 秒自动刷新）；`--html [路径]` 导出零外链单文件快照
+  （默认 `.agents/board.html`，可离线打开或发给别人；`--open` 导出后自动打开）
+- **人在网页上指挥 agent**：`--web` 页面可直接发指令（默认仅 127.0.0.1）。
+  指令就是本目录 `inbox/` 里 `from: human` 的标准问事板文件（`to: any` 广播或点名会话），
+  agent 按 AGENTS.md 规程在阶段间隙读取、把回复写回同一文件，页面实时显示回复并可弹桌面通知；
+  agent 空闲时用每条指令旁的「复制提醒」把一句话粘进 agent 对话框唤醒它
+- **局域网访问三档**：默认仅本机；`--bind 0.0.0.0 --no-directives` 只读分享；
+  设环境变量 `MULTI_AGENT_BOARD_PASSWORD` 后再 `--bind 0.0.0.0` 为带密码可指挥
+  （对外可写又无密码会拒绝启动；HTTP 明文仅限可信网络，外网用 SSH 端口转发）。
+  `MULTI_AGENT_BOARD_READONLY=1` 可一键只读
 
 ## 注意
 
