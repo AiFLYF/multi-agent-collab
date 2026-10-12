@@ -4,7 +4,7 @@
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](#)
 [![deps](https://img.shields.io/badge/dependencies-none-success)](#)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![changelog](https://img.shields.io/badge/changelog-1.4.0-orange)](CHANGELOG.md)
+[![changelog](https://img.shields.io/badge/changelog-1.4.1-orange)](CHANGELOG.md)
 
 > 装进任意 git 项目，让 Claude Code、Codex、OpenCode、Pi、Trae、WorkBuddy 等多个平台的
 > AI 助手在同一份规则下协同干活：不互相覆盖、不重复劳动；你通过一块网页看板实时查看

@@ -732,9 +732,13 @@ class TestInstallerE2E(unittest.TestCase):
         warned_paths = [w.split("（分支", 1)[0].replace("未注册 worktree：", "").strip()
                         for w in data["warnings"]]
         warned_paths = [p.replace("\\", "/").rstrip("/") for p in warned_paths]
-        self.assertNotIn(str(self.proj).replace("\\", "/"), warned_paths,
+        # git 回报的是真实路径；tempfile 建的却是别名路径（macOS 的 /var 软链、
+        # Windows CI 的 8.3 短名 RUNNER~1）——两边先 resolve 规范化再比较
+        proj_real = str(Path(self.proj).resolve()).replace("\\", "/")
+        wt_real = str(Path(wt).resolve()).replace("\\", "/")
+        self.assertNotIn(proj_real, warned_paths,
                          f"主工作区被误报：{warned_paths}")
-        self.assertIn(str(wt).replace("\\", "/"), warned_paths)
+        self.assertIn(wt_real, warned_paths)
         self.assertIn("feature/coupon", "\n".join(data["warnings"]))
 
         # 在 worktree 注册会话（拷整个 .agents 过去是 AGENTS.md 规定做法）

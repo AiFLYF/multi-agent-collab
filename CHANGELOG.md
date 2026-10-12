@@ -4,6 +4,18 @@
 `.agents/install.json`，`doctor` 据此提示升级。
 版本号遵循语义化版本（major.minor.patch）。
 
+## 1.4.1 — 2026-10-12
+
+CI 三平台矩阵实跑暴露的缺陷修复（1.4.0 发布当天的热修）：
+
+- **修指令通道在非中文 Windows 下整体失效**：看板服务端的审计日志直接用 stdout
+  编码打印，英文 Windows（cp1252）连「[指令]」都编码不了，handler 崩溃后客户端只看到
+  连接被断（RemoteDisconnected），而指令其实已落盘。改为编码安全输出（`_audit`），
+  任何 locale 下不崩
+- 测试加固：worktree 告警断言先 resolve 规范化再比较——git 回报的是真实路径，
+  tempfile/会话记录的却是别名路径（macOS 的 `/var` 软链、Windows 8.3 短名），
+  三平台 CI 不再因路径形态误报
+
 ## 1.4.0 — 2026-10-12
 
 新增三个平台支持（均为「AGENTS.md 原生派」，零配置）：

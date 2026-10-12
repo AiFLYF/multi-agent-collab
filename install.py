@@ -36,7 +36,7 @@ from datetime import datetime
 from pathlib import Path
 
 KIT_ROOT = Path(__file__).resolve().parent
-KIT_VERSION = "1.4.0"   # 升级 kit 时记得改；会写进目标项目的 .agents/install.json
+KIT_VERSION = "1.4.1"   # 升级 kit 时记得改；会写进目标项目的 .agents/install.json
 
 # 与 tools/agents_status.py 同名同义：git 可执行文件解析的环境变量覆盖
 # （两份小拷贝是有意为之——看板会被单独装进目标项目，不能 import 安装器）。

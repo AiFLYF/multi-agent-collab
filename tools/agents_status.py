@@ -59,7 +59,7 @@ FUTURE_HB_TOL_MIN = 10      # 心跳比当前时刻快超过这么多 → 视为
 
 # 版本必须与 install.py 的 KIT_VERSION 保持一致（有测试锁定，防两边漂移）。
 # 看板独立分发到目标项目，不能 import 安装器，所以各存一份常量。
-BOARD_VERSION = "1.4.0"
+BOARD_VERSION = "1.4.1"
 
 # 人类可视化模式（--web / --html）：纯本机，不影响 JSON/终端模式与 agent 用法
 WEB_PORT_DEFAULT = 8731
@@ -1495,6 +1495,23 @@ def _env_truthy(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _audit(msg: str) -> None:
+    """服务端审计日志：任何控制台编码下都不许崩。
+
+    CI 英文 Windows 的 stdout 是 cp1252，连「[指令]」都编码不了；
+    handler 一崩，客户端只看到连接被断（RemoteDisconnected），指令其实已落盘。
+    主进程 main() 会 reconfigure stdout，但测试/被 import 的进程没有这层保护。
+    """
+    try:
+        print(msg, flush=True)
+    except UnicodeEncodeError:
+        enc = getattr(sys.stdout, "encoding", None) or "ascii"
+        try:
+            print(msg.encode(enc, "replace").decode(enc), flush=True)
+        except Exception:
+            pass
+
+
 def make_server(root: Path, port: int = 0, stale_min: int = STALE_MIN_DEFAULT,
                 with_prs: bool = False, bind: str = "127.0.0.1",
                 password: str | None = None,
@@ -1640,8 +1657,8 @@ def make_server(root: Path, port: int = 0, stale_min: int = STALE_MIN_DEFAULT,
             except ValueError as e:
                 self._json(400, {"error": str(e)})
                 return
-            print(f"[指令] {datetime.now():%H:%M:%S} → {to}  {dest.name}"
-                  + (f"（{name}）" if name else ""), flush=True)
+            _audit(f"[指令] {datetime.now():%H:%M:%S} → {to}  {dest.name}"
+                   + (f"（{name}）" if name else ""))
             self._json(200, {"ok": True, "file": dest.name})
 
     return _BoardServer((bind, port), _Handler)
