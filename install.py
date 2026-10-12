@@ -36,7 +36,7 @@ from datetime import datetime
 from pathlib import Path
 
 KIT_ROOT = Path(__file__).resolve().parent
-KIT_VERSION = "1.3.1"   # 升级 kit 时记得改；会写进目标项目的 .agents/install.json
+KIT_VERSION = "1.4.0"   # 升级 kit 时记得改；会写进目标项目的 .agents/install.json
 
 # 与 tools/agents_status.py 同名同义：git 可执行文件解析的环境变量覆盖
 # （两份小拷贝是有意为之——看板会被单独装进目标项目，不能 import 安装器）。
@@ -105,6 +105,31 @@ WORKBUDDY_TARGET = ".workbuddy-ai/git-flow-agent.md"
 
 ALL_PLATFORMS = ["trae", "claude", "workbuddy"]
 INSTALL_META = ".agents/install.json"
+
+# 这些平台**原生读取项目根 AGENTS.md**，套件无需为它们部署任何专属文件
+# （官方约定：Codex CLI、OpenCode、Pi 都把根 AGENTS.md 当项目指令）。
+# 安装器/doctor 只检测痕迹并提示，不写 .codex/.opencode/.pi 下的任何东西。
+NATIVE_AGENTS_PLATFORM_HINT = (
+    "根目录 AGENTS.md 即该平台的项目指令文件，新装/升级后开新对话即自动生效，无需额外入口"
+)
+
+
+def detect_native_agents_platforms(target: Path) -> list[str]:
+    """识别目标项目里"原生读 AGENTS.md"的平台痕迹。纯只读，不写任何文件。
+
+    - opencode：项目内有 .opencode/ 目录或 opencode.json 配置
+    - pi：项目内有 .pi/ 目录（pi.dev 的项目配置目录；AGENTS.md 从工作目录自动发现）
+    - codex：项目级无标记，靠 CODEX_HOME（默认 ~/.codex）识别是否装了 Codex CLI
+    """
+    hits: list[str] = []
+    if (target / ".opencode").exists() or (target / "opencode.json").exists():
+        hits.append("opencode")
+    if (target / ".pi").exists():
+        hits.append("pi")
+    codex_home = Path(os.environ.get("CODEX_HOME") or (Path.home() / ".codex"))
+    if codex_home.is_dir():
+        hits.append("codex")
+    return hits
 
 # .git/info/exclude 里被托管的标记块
 MARK_BEGIN = "# >>> multi-agent-collab (local-only; managed by install.py) >>>"
@@ -558,6 +583,13 @@ def cmd_install(args: argparse.Namespace) -> int:
         print("  = 忽略规则已是最新，跳过")
     print()
 
+    native = detect_native_agents_platforms(target)
+    if native:
+        print("【AGENTS.md 原生平台】（无需专属入口）")
+        for name in native:
+            print(f"  ✔ {name}：{NATIVE_AGENTS_PLATFORM_HINT}")
+        print()
+
     print("【安装后要做的 3 件事】")
     print("  1. 打开 AGENTS.md 第 6 节、CLAUDE.md「项目速览」，把示例换成你的项目命令"
           "（升级时自动保留，放心改）")
@@ -647,6 +679,14 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         warn(f"workbuddy: .workbuddy-ai/ 在但镜像缺失：{WORKBUDDY_TARGET}")
     else:
         print("  [--]   workbuddy: 未安装（可选）")
+
+    print("\n【AGENTS.md 原生平台】（根 AGENTS.md 即规则，无需专属入口）")
+    native = detect_native_agents_platforms(target)
+    if native:
+        for name in native:
+            ok(f"{name}：已识别，{NATIVE_AGENTS_PLATFORM_HINT}")
+    else:
+        print("  [--]   未发现 codex / opencode / pi 痕迹（装了也不影响：它们直接读根 AGENTS.md）")
 
     print("\n【git 与本地忽略】")
     if not is_git_repo(target):

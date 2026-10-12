@@ -4,6 +4,17 @@
 `.agents/install.json`，`doctor` 据此提示升级。
 版本号遵循语义化版本（major.minor.patch）。
 
+## 1.4.0 — 2026-10-12
+
+新增三个平台支持（均为「AGENTS.md 原生派」，零配置）：
+
+- **OpenAI Codex CLI**：原生自动加载项目根 `AGENTS.md`（官方约定，另有 `~/.codex/AGENTS.md` 全局位）
+- **OpenCode（sst/opencode）**：根 `AGENTS.md` 即项目规则文件
+- **Pi（pi.dev，`@earendil-works/pi-coding-agent`）**：从工作目录及父目录自动发现根 `AGENTS.md`
+- 安装器/doctor 新增纯只读的平台痕迹检测（`.opencode/`、`opencode.json`、`.pi/`、
+  `CODEX_HOME`/`~/.codex`），识别到就提示"开新对话即生效"；**不往这三个平台的目录写任何文件，
+  忽略清单不变**；新增 1 个测试用例（套件 34 个）
+
 ## 1.3.1 — 2026-10-12
 
 **降 token（按需加载）**：

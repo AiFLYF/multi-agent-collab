@@ -156,10 +156,12 @@
 
 ## 7. 各平台入口（本机文件；**新建对话**才加载，改完旧对话不刷新）
 
-Trae：`.trae/rules/git-flow-agent.md`（alwaysApply，要求先读本文件）｜
-Claude/TraeCode CLI：根 `AGENTS.md`+`CLAUDE.md` 自动加载｜
-斜杠命令：`.claude/commands/git-flow.md`｜
-WorkBuddy：`.workbuddy-ai/` 是本文件镜像，改完跑 `install.py mirror`。
+- **AGENTS.md 原生派（零配置，根 AGENTS.md 自动生效）**：Claude Code / TraeCode CLI、
+  **OpenAI Codex CLI**、**OpenCode（sst）**、**Pi（pi.dev）**
+- Trae：`.trae/rules/git-flow-agent.md`（alwaysApply，要求先读本文件）
+- WorkBuddy：`.workbuddy-ai/` 是本文件镜像，改完跑 `install.py mirror`
+- 斜杠命令：`.claude/commands/git-flow.md`（`/git-flow <任务>`）
+
 验证：开新对话问"你开工前要先做什么？"，应答出 fetch + `agents_status.py` 看板 + inbox。
 
 ## 8. 本机私有清单与换机

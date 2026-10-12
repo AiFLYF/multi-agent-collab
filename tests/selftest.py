@@ -161,6 +161,31 @@ class TestBoardUnits(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn(inst.KIT_VERSION, r.stdout)
 
+    def test_native_agents_platforms_detected(self) -> None:
+        """Codex/OpenCode/Pi 原生读根 AGENTS.md：检测函数只识别痕迹、不写任何文件。"""
+        import os
+        # 全程隔离真实用户环境（本机可能真的装了 Codex：~/.codex 存在）
+        old_codex = os.environ.get("CODEX_HOME")
+        with tempfile.TemporaryDirectory() as td:
+            t = Path(td)
+            os.environ["CODEX_HOME"] = str(t / "no-codex-here")
+            try:
+                self.assertEqual(inst.detect_native_agents_platforms(t), [])
+                (t / ".pi").mkdir()
+                (t / ".opencode").mkdir()
+                hits = inst.detect_native_agents_platforms(t)
+                self.assertIn("pi", hits)
+                self.assertIn("opencode", hits)
+                self.assertNotIn("codex", hits)
+                # Codex 项目级无标记，靠 CODEX_HOME（默认 ~/.codex）识别全局安装
+                (t / "no-codex-here").mkdir()
+                self.assertIn("codex", inst.detect_native_agents_platforms(t))
+            finally:
+                if old_codex is None:
+                    os.environ.pop("CODEX_HOME", None)
+                else:
+                    os.environ["CODEX_HOME"] = old_codex
+
     def test_git_resolver_env_override(self) -> None:
         """MULTI_AGENT_GIT：none 强制不可用；显式路径原样采用。"""
         old = os.environ.get(board.GIT_ENV_VAR)

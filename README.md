@@ -4,17 +4,17 @@
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](#)
 [![deps](https://img.shields.io/badge/dependencies-none-success)](#)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![changelog](https://img.shields.io/badge/changelog-1.3.1-orange)](CHANGELOG.md)
+[![changelog](https://img.shields.io/badge/changelog-1.4.0-orange)](CHANGELOG.md)
 
-让**同一台电脑上的多个 AI 编码会话**（Trae / WorkBuddy / Claude Code，也可以是真人）
-在**同一个 git 项目**里并行干活——互不覆盖、不撞车、走了能交接。
+让**同一台电脑上的多个 AI 编码会话**（Claude Code / Codex / OpenCode / Pi / Trae / WorkBuddy，
+也可以是真人）在**同一个 git 项目**里并行干活——互不覆盖、不撞车、走了能交接。
 
 - **零基础设施**：没有服务端、数据库、消息队列，协作全部落在 Markdown 文件上
 - **零依赖**：Python 标准库即可，一条命令装进任意 git 项目
 - **语言/框架/硬件无关**：Web、后端、脚本、嵌入式都适用
 
 ```
-Trae / WorkBuddy / Claude Code ──▶  <你的项目>/.agents/
+Claude Code / Codex / OpenCode / Pi / Trae / WorkBuddy ──▶  <你的项目>/.agents/
                                     ├── sessions/  谁在哪个分支干什么（心跳）
                                     ├── worklog/   今天做完了什么
                                     └── inbox/     要问谁、谁来接手
@@ -186,10 +186,16 @@ python tools/agents_status.py --web --bind 0.0.0.0
 
 | 平台 | 生效方式 |
 |---|---|
+| **Claude Code / TraeCode CLI** | 根目录 `AGENTS.md` 自动加载，`CLAUDE.md` 用 `@AGENTS.md` 引入 |
+| **OpenAI Codex CLI** | 根目录 `AGENTS.md` 原生自动加载（另有 `~/.codex/AGENTS.md` 全局位）——**零配置** |
+| **OpenCode（sst/opencode）** | 根目录 `AGENTS.md` 就是它的项目规则（官方约定，类似 Cursor rules）——**零配置** |
+| **Pi（pi.dev）** | 从工作目录及父目录自动发现根 `AGENTS.md`（context file，无需 trust）——**零配置** |
 | Trae IDE | `.trae/rules/git-flow-agent.md`（`alwaysApply: true`），或设置里打开 "Include AGENTS.md" |
-| Claude Code / TraeCode CLI | 根目录 `AGENTS.md` 自动加载，`CLAUDE.md` 用 `@AGENTS.md` 引入 |
-| WorkBuddy | `.workbuddy-ai/git-flow-agent.md` 镜像 |
-| 任意平台 | `.claude/commands/git-flow.md` 提供 `/git-flow <任务>` 斜杠命令 |
+| WorkBuddy | `.workbuddy-ai/git-flow-agent.md` 镜像（改完总章跑 `install.py mirror` 刷新） |
+| 斜杠命令 | `.claude/commands/git-flow.md` 提供 `/git-flow <任务>` |
+
+> Codex / OpenCode / Pi 与 Claude Code 同属「AGENTS.md 原生派」：安装器只放根 `AGENTS.md`，
+> 不往 `.codex/`、`.opencode/`、`.pi/` 写任何东西；`install.py doctor` 会自动识别并提示。
 
 ---
 
@@ -242,7 +248,7 @@ cp "$SRC/templates/session.md"    "$DST/.agents/sessions/_template.md"
 cp "$SRC/templates/inbox.md"      "$DST/.agents/inbox/_template.md"
 cp "$SRC/templates/worklog.md"    "$DST/.agents/worklog/_template.md"
 
-# 平台入口按需：
+# 平台入口按需（Claude Code / Codex / OpenCode / Pi 直接读根 AGENTS.md，无需拷贝）：
 # cp "$SRC/platforms/trae-rule.md"       "$DST/.trae/rules/git-flow-agent.md"
 # cp "$SRC/platforms/claude-command.md"  "$DST/.claude/commands/git-flow.md"
 
@@ -279,7 +285,7 @@ multi-agent-collab/
 ├── docs/
 │   ├── README.md  TROUBLESHOOTING.md
 │   └── examples/               # 会话/问事板填法 + 4 条 D 组写法范例
-├── tests/selftest.py           # 33 个测试用例（14 单元 + 19 安装器 E2E）
+├── tests/selftest.py           # 34 个测试用例（15 单元 + 19 安装器 E2E）
 └── .github/workflows/selftest.yml  # 3 系统 × 4 Python 版本 CI
 ```
 
