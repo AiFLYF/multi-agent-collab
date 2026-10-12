@@ -29,18 +29,36 @@
 </head>
 <body>
 
-<!-- ── 预加载幕布 ─────────────────────────────────────────── -->
+<!-- ── 预加载幕布（aria-hidden：读屏用户不等这场假加载，直接进正文） ── -->
 <div id="preloader" aria-hidden="true">
   <div class="pre-top mono">
-    <span>MULTI-AGENT-COLLAB</span>
-    <span>SYNCING 06 SIGNAL SOURCES · 正在接入六个信号源</span>
+    <span class="pre-brand">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M2 12h20M4.9 4.9l14.2 14.2M19.1 4.9L4.9 19.1"/></svg>
+      MULTI-AGENT-COLLAB
+    </span>
+    <span class="pre-ver">V1.4.1</span>
   </div>
+
   <div class="pre-mid">
-    <div class="pre-count"><span id="preCount">00</span><em>%</em></div>
-    <div class="pre-dots" id="preDots"></div>
+    <div class="pre-ring">
+      <svg viewBox="0 0 120 120" aria-hidden="true">
+        <circle class="pr-track" cx="60" cy="60" r="52"/>
+        <circle class="pr-fill" cx="60" cy="60" r="52"/>
+      </svg>
+      <div class="pre-count mono"><span id="preCount">00</span><em>%</em></div>
+    </div>
+    <p class="pre-stage mono" id="preStage">BOOTING · 初始化画布</p>
+    <div class="pre-dots" id="preDots" aria-hidden="true"></div>
   </div>
-  <div class="pre-bar"><i id="preBar"></i></div>
+
+  <div class="pre-bottom mono">
+    <span class="pre-hint">SIX SIGNAL SOURCES · 六个信号源接入中</span>
+    <span class="pre-bar"><i></i></span>
+  </div>
 </div>
+
+<!-- 复制操作的读屏反馈（视觉上用按钮自身的文字变化） -->
+<p class="sr-only" id="srLive" role="status" aria-live="polite"></p>
 
 <!-- ── 氛围层 ─────────────────────────────────────────────── -->
 <div class="orb orb-a" aria-hidden="true"></div>
@@ -383,24 +401,22 @@
           <span class="st-line rv" style="--d:.08s">你看<em>网页</em>。</span>
         </h2>
 
-        <div class="board-grid">
-          <ul class="board-list">
-            <li class="rv" style="--d:0s"><span class="bl-i">01</span><span><b>每 5 秒自动刷新。</b>每个 AI 一张卡片：哪个平台、在哪个分支、做什么任务、几分钟前还有心跳（绿 = 正常，红 = 失联）。</span></li>
-            <li class="rv" style="--d:.06s"><span class="bl-i">02</span><span><b>问题与交接一眼可见。</b>未答复的 inbox 留言、前任留下的「下一步 / 阻塞点」，不用去翻文件。</span></li>
-            <li class="rv" style="--d:.12s"><span class="bl-i">03</span><span><b>worktree 告警。</b>有 AI 在没登记过的目录里动了手脚，红色告警直接拍在页面上。</span></li>
-            <li class="rv" style="--d:.18s"><span class="bl-i">04</span><span><b>直接对 AI 下指令。</b>在卡片上输入「先停一下，别碰登录模块」——AI 在下个阶段间隙读到并执行，回复实时回到网页，可开桌面通知。<b>人类指令优先级最高。</b></span></li>
-            <li class="rv" style="--d:.24s"><span class="bl-i">05</span><span><b>三档安全。</b>默认只听本机；局域网可以只读大屏，或设密码后可指挥——「对外可写又无密码」的组合会被拒绝启动。</span></li>
-          </ul>
+        <ul class="board-list">
+          <li class="rv" style="--d:0s"><span class="bl-i">01</span><span><b>每 5 秒自动刷新。</b>每个 AI 一张卡片：哪个平台、在哪个分支、做什么任务、几分钟前还有心跳（绿 = 正常，红 = 失联）。</span></li>
+          <li class="rv" style="--d:.06s"><span class="bl-i">02</span><span><b>问题与交接一眼可见。</b>未答复的 inbox 留言、前任留下的「下一步 / 阻塞点」，不用去翻文件。</span></li>
+          <li class="rv" style="--d:.12s"><span class="bl-i">03</span><span><b>worktree 告警。</b>有 AI 在没登记过的目录里动了手脚，红色告警直接拍在页面上。</span></li>
+          <li class="rv" style="--d:.18s"><span class="bl-i">04</span><span><b>直接对 AI 下指令。</b>在卡片上输入「先停一下，别碰登录模块」——AI 在下个阶段间隙读到并执行，回复实时回到网页，可开桌面通知。<b>人类指令优先级最高。</b></span></li>
+          <li class="rv" style="--d:.24s"><span class="bl-i">05</span><span><b>三档安全。</b>默认只听本机；局域网可以只读大屏，或设密码后可指挥——「对外可写又无密码」的组合会被拒绝启动。</span></li>
+        </ul>
 
-          <figure class="board-figure rv" style="--d:.16s">
-            <div class="bf-bar"><i></i><i></i><i></i><span class="mono">127.0.0.1:8731 · python tools/agents_status.py --web</span></div>
-            <button class="bf-zoom" type="button" data-zoom="assets/board.png" aria-label="放大查看看板截图">
-              <img src="assets/board.png" alt="multi-agent-collab 网页看板：多个 AI 会话卡片、inbox 与 worktree 面板（演示数据）" width="1440" height="900" loading="lazy">
-              <span class="bf-zoom-tag mono">点击放大 ⤢</span>
-            </button>
-            <figcaption class="bf-cap">演示数据 · demo-shop 项目里三个不同平台的会话正在干活</figcaption>
-          </figure>
-        </div>
+        <figure class="board-figure rv" style="--d:.16s">
+          <div class="bf-bar"><i></i><i></i><i></i><span class="mono">127.0.0.1:8731 · python tools/agents_status.py --web</span></div>
+          <button class="bf-zoom" type="button" data-zoom="assets/board.png" aria-label="放大查看看板截图">
+            <img src="assets/board.png" alt="multi-agent-collab 网页看板：上方的指令下发区与统计卡、左侧的四个 AI 会话卡片、右侧的指令与回复往来（演示数据）" width="1440" height="900" loading="lazy">
+            <span class="bf-zoom-tag mono">点击放大 ⤢</span>
+          </button>
+          <figcaption class="bf-cap">演示数据 · demo-shop 项目里四个平台同时在干活：会话卡片、指令下发、指令与回复都在这一屏</figcaption>
+        </figure>
 
         <div class="code rv" style="--d:.24s">
           <div class="code-bar"><i></i><i></i><i></i><span class="fname">terminal · powershell / bash</span><button class="copy" data-copy="board-cmd" data-hover>复制</button></div>
@@ -582,11 +598,10 @@
     <img src="assets/board.png" alt="multi-agent-collab 网页看板全图：活跃会话卡片、指令与回复、worktree 面板（演示数据）">
   </div>
 
-  <!-- three.js：本地 UMD 优先（file:// 可用），CDN 仅作兜底 -->
-  <script src="vendor/three/build/three.min.js"></script>
-  <script>if(typeof THREE==='undefined'){document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"><\/script>')}</script>
+  <!-- ui / hero 走首屏关键路径；three.js 与拓扑图由 ui.js 按需注入
+       （712KB 的 WebGL 库不该挡在首屏，否则主线程被占住，
+        连加载幕布的计数都跑不动） -->
   <script src="assets/js/ui.js" defer></script>
   <script src="assets/js/hero.js" defer></script>
-  <script src="assets/js/topo.js" defer></script>
 </body>
 </html>
