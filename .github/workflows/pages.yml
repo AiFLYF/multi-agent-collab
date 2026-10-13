@@ -1,0 +1,49 @@
+name: pages
+
+# 介绍页部署。
+#
+# 为什么不用「分支部署」：GitHub Pages 的分支来源只支持仓库根（/）或 /docs，
+# 而本项目站点在 site/ —— 想发布子目录只能走 Actions 产物部署（官方推荐做法，
+# 且不会跑 Jekyll，_ 开头的文件也能正常发布）。
+#
+# 触发：main 分支变更、手工 dispatch。
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时刻只跑一个发布；新推送排队，不打断正在进行的发布
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # 仓库尚未启用 Pages 时自动开启（已在设置里开过就跳过）
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      # 只发布 site/ 目录 —— 整个站点是自包含的（字体与 three.js 都在
+      # site/vendor/ 下），不需要构建步骤
+      - name: Upload site/
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
