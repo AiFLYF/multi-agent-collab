@@ -1746,6 +1746,23 @@ def make_server(root: Path, port: int = 0, stale_min: int = STALE_MIN_DEFAULT,
         def do_POST(self) -> None:     # noqa: N802
             if not self._gate_auth():
                 return
+            # 先把请求体读干净，再走任何校验分支。
+            # 反例（曾经的写法）：缺防伪头就直接回 403，请求体还留在接收缓冲里 ——
+            # 服务器关连接时 Windows 发的是 RST 而不是 FIN，客户端拿到的是
+            # ConnectionAborted(WinError 10053)，我们精心写的 403 根本到不了它手里。
+            # 这个竞态在 Linux/macOS 上几乎不复现，只在 Windows CI 上偶发。
+            # 放在鉴权之后读：未通过鉴权的请求不消耗服务端读取，不新增阻塞面。
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                length = 0
+            if length < 0 or length > 16384:
+                # 声明得离谱：不读，显式断开，别把垃圾读进内存
+                self.close_connection = True
+                self._json(413, {"error": "请求体过大"})
+                return
+            raw = self.rfile.read(length) if length else b""
+
             if urlsplit(self.path).path != "/directive":
                 self._json(404, {"error": "未知接口"})
                 return
@@ -1755,15 +1772,11 @@ def make_server(root: Path, port: int = 0, stale_min: int = STALE_MIN_DEFAULT,
             if self.headers.get(DIRECTIVE_HEADER) != "1" or not self._same_origin():
                 self._json(403, {"error": "拒绝：缺少防伪头或来源不一致"})
                 return
-            try:
-                length = int(self.headers.get("Content-Length", "0"))
-            except ValueError:
-                length = 0
-            if length <= 0 or length > 16384:
-                self._json(400, {"error": "请求体为空或过大"})
+            if not raw:
+                self._json(400, {"error": "请求体为空"})
                 return
             try:
-                data = json.loads(self.rfile.read(length).decode("utf-8"))
+                data = json.loads(raw.decode("utf-8"))
                 if not isinstance(data, dict):
                     raise ValueError
             except (ValueError, UnicodeDecodeError):
