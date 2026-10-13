@@ -4,6 +4,26 @@
 `.agents/install.json`，`doctor` 据此提示升级。
 版本号遵循语义化版本（major.minor.patch）。
 
+## 1.5.0 — 2026-10-14
+
+- 首次安装按平台询问，脚本必须显式选择，不再默认全装；支持保存选择、旧版迁移及 linked worktree 继承。
+- `CLAUDE.md` 改为 Claude 专属文件；Codex / OpenCode / Pi 共用总章，不生成其它平台配置。
+- 新增 Cursor、GitHub Copilot、Windsurf 项目入口；`platforms [--json]` 列出实际文件。
+- 增加 Gemini CLI、Qwen Code、Cline、Roo Code、Continue、Kiro，按官方入口机制提供导入、规则或 steering；支持常见平台名称别名。
+- 新增会话命令 check / start / heartbeat / finish / handoff：主 worktree 系统锁串行登记，检查工作区、分支和文件占用，
+  拦截未答人类指令，核对会话所有者，收尾只追加日志，失活不自动释放占用。看板展示文件范围、进度和占用冲突。
+- 新增 `sync` 命令：追加平台、刷新入口与 WorkBuddy 镜像，保留项目总章、启动文档与协作记录。
+- 新增 `.agents/START_HERE.md`，统一新对话的最小阅读顺序；明确自动发现、旧会话和客户端设置的边界。
+- 安装前检查已跟踪文件、越界符号链接、模板缺失与忽略编码；实际忽略未生效时不写入规则文件。
+  Windows 的 stdout / stderr 统一 UTF-8。已有本机 Claude / Copilot 说明采用托管块保留其它内容。
+- 安装提示词默认复用用户主目录的套件 clone；README 改为按选择、安装、验证、追加平台的顺序说明。
+  展示页增加平台配置器与静态交互 demo，提示词和平台数据由脚本同步，CI 检查漂移。
+- 新增 9 个安装回归用例，覆盖最小安装、非交互选择、同步保留、旧版迁移、缺入口、跟踪保护、忽略冲突和预览。
+- 增加独立协作回归套件，实跑并发登记、跨 worktree 文件范围、失活占用、交接、所有者检查与新增入口兼容。
+
+升级：在目标项目执行 `python "<套件目录>/install.py" install .`，会沿用或迁移已有选择。
+`--platforms none` 不再无条件生成 CLAUDE.md；`mirror` 作为追加 WorkBuddy 并同步入口的兼容命令保留。
+
 ## 1.4.1 — 2026-10-12
 
 CI 三平台矩阵实跑暴露的缺陷修复（1.4.0 发布当天的热修）：

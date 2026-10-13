@@ -4,6 +4,7 @@ argument-hint: <任务描述>
 ---
 
 @AGENTS.md
+@.agents/START_HERE.md
 
 # 任务
 

@@ -10,6 +10,9 @@
 ```
 .agents/
 ├── README.md                 # 本文件
+├── START_HERE.md             # 每次新对话的最小阅读顺序
+├── install.json              # 项目名、已选平台、套件源路径与版本
+├── coordination.lock         # 登记过程的系统锁（主 worktree 共用，退出自动释放）
 ├── sessions/                 # 每个活跃会话一个文件：我是谁、在哪个分支、心跳
 │   ├── _template.md
 │   └── <会话ID>.md
@@ -28,6 +31,16 @@
 为什么这样分片：多个 agent 同时写同一个文件必然冲突。**一会话一文件、一问题一文件、
 一天一文件**，各写各的，万一冲突合并时取并集。
 
+## 新对话与新增平台
+
+每次新对话先读 [START_HERE.md](START_HERE.md)，不要把上个会话的看板与 inbox 状态当现状。
+原生读取 `AGENTS.md` 的平台共享根规则；其它平台安装自己的启动入口并指向相同文档。
+根规则修改后，新对话会重新读取；WorkBuddy 的完整镜像需要同步。
+
+新增平台用 `python "<套件目录>/install.py" sync "<项目>" --platforms cursor`；
+日常刷新入口省略 `--platforms`。选择会保存在 `install.json`，升级沿用，追加不会删除其它平台。
+套件默认复用用户主目录的 `multi-agent-collab`，实际位置以 `install.json` 的 `source_dir` 为准。
+
 ## 会话文件 `sessions/<会话ID>.md`
 
 - 文件名即会话 ID：`<agent>-<YYMMDD-HHMM>-<4位随机>`，如 `trae-261009-1115-a3f9`
@@ -41,6 +54,9 @@
 - heartbeat：每 ≤ 15 分钟或每完成一阶段更新，**保存文件即生效，不用 commit/push**；
   超过 15 分钟没更新（或时间无法解析、比当前时刻快 10 分钟以上）视为失活
 - 收工把 status 置 `done`；没做完要走，置 `blocked`、填 `handoff` 并在 inbox 留交接问题
+- 建议使用 `tools/agents_session.py` 的 start / heartbeat / finish / handoff 维护，避免漏字段。
+  `files` 是 JSON 数组（如 `["src/app.py", "docs/"]`）；看板显示占用并提醒交叉冲突。
+  同工作区不可重复登记；独立 worktree 可并行处理不重叠的文件。失活不会自动释放占用。
 
 ## 工作日志 `worklog/YYYY-MM-DD.md`
 

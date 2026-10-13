@@ -31,5 +31,11 @@ jobs:
       - name: Board selfcheck
         run: python tools/agents_status.py --selfcheck
 
+      - name: Installation docs and platform catalog
+        run: python scripts/sync_install_docs.py --check
+
       - name: Installer end-to-end tests
         run: python tests/selftest.py
+
+      - name: Session coordination and platform integration
+        run: python -m unittest discover -s tests -p test_sessions.py

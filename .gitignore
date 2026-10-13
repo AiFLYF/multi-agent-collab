@@ -21,6 +21,15 @@ env/
 .workbuddy-ai/
 .workbuddy/
 .agent/
+.cursor/rules/multi-agent-collab.mdc
+.github/copilot-instructions.md
+.windsurf/rules/multi-agent-collab.md
+GEMINI.md
+.qwen/QWEN.local.md
+.clinerules/multi-agent-collab.md
+.roo/rules/00-multi-agent-collab.md
+.continue/rules/multi-agent-collab.md
+.kiro/steering/multi-agent-collab.md
 *.bak-*
 **/HANDOFF-*.md
 
