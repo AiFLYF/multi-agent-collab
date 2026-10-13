@@ -150,7 +150,10 @@
     var idx = active ? parseInt(active.getAttribute('data-sec'), 10) : 0;
     if (isNaN(idx)) idx = cur;
     $$('.site-nav a, .side-index button').forEach(function (a) {
-      a.classList.toggle('on', parseInt(a.getAttribute('data-target'), 10) === idx);
+      var on = parseInt(a.getAttribute('data-target'), 10) === idx;
+      a.classList.toggle('on', on);
+      if (on) a.setAttribute('aria-current', 'true');
+      else a.removeAttribute('aria-current');
     });
     var acc = active && active.getAttribute('data-acc');
     if (acc && acc !== curAccent) {
@@ -160,26 +163,61 @@
   }
   window.addEventListener('scroll', syncActiveNav, { passive: true });
   syncActiveNav();
+  /* 侧索引与顶栏导航指向完全相同的 7 个章节，不该让键盘用户多穿 7 个站：
+     保留鼠标可点与读屏可读，但移出 Tab 序 */
+  $$('.side-index button').forEach(function (b) { b.setAttribute('tabindex', '-1'); });
 
-  /* ── 移动菜单 ────────────────────────────────────────────── */
+  /* ── 移动菜单 ──────────────────────────────────────────────
+   * 菜单是 role="dialog"，开合必须同步 aria-hidden —— 否则读屏被告知
+   * "忽略这块内容"，键盘却把焦点送了进去（axe 的 aria-hidden-focus 违规，
+   * 也违反 WCAG 4.1.2）。打开时焦点移进第一个链接，关闭时还给触发者，
+   * 期间 Tab 在菜单内循环。
+   */
   var burger = $('#burger');
   var menu = $('#menu');
-  function closeMenu() {
+  var menuReturnFocus = null;
+  function menuLinks() { return $$('a[href]', menu); }
+  function menuIsOpen() { return !!menu && menu.classList.contains('open'); }
+  function openMenu() {
+    if (!menu || menuIsOpen()) return;
+    menuReturnFocus = document.activeElement;
+    menu.classList.add('open');
+    menu.setAttribute('aria-hidden', 'false');
+    if (burger) { burger.classList.add('open'); burger.setAttribute('aria-expanded', 'true'); }
+    /* 必须延后一帧再 focus：刚加上 .open 时样式还没重算，
+       此刻菜单的 visibility 仍是 hidden，同步 focus() 会被浏览器拒绝 */
+    function focusFirst() {
+      if (!menuIsOpen()) return;
+      var ae = document.activeElement;
+      if (ae && ae !== burger && ae !== document.body && menu.contains(ae)) return;
+      var f = menuLinks()[0];
+      if (f) f.focus();
+    }
+    requestAnimationFrame(focusFirst);
+    setTimeout(focusFirst, 80);
+  }
+  function closeMenu(restoreFocus) {
     if (!menu) return;
+    var wasOpen = menuIsOpen();
     menu.classList.remove('open');
+    menu.setAttribute('aria-hidden', 'true');
     if (burger) { burger.classList.remove('open'); burger.setAttribute('aria-expanded', 'false'); }
+    if (wasOpen && restoreFocus === true) {
+      var back = menuReturnFocus && document.contains(menuReturnFocus) ? menuReturnFocus : burger;
+      if (back) back.focus();
+    }
+    if (!wasOpen) return;
+    menuReturnFocus = null;
   }
   if (burger && menu) {
     burger.addEventListener('click', function () {
-      var open = menu.classList.toggle('open');
-      burger.classList.toggle('open', open);
-      burger.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (menuIsOpen()) closeMenu(false); else openMenu();
     });
     /* 点菜单外区域也收起 */
     document.addEventListener('click', function (e) {
-      if (!menu.classList.contains('open')) return;
+      if (!menuIsOpen()) return;
       if (menu.contains(e.target) || burger.contains(e.target)) return;
-      closeMenu();
+      closeMenu(true);
     });
   }
 
@@ -326,11 +364,21 @@
   var lightbox = $('#lightbox');
   var lbClose = $('#lbClose');
   var lbTrigger = null;
+  /* 灯箱打开时把背景整块 inert：hidden 只挡住了它自己，
+     背后的正文对读屏虚拟光标依然可达 */
+  function setBackgroundInert(on) {
+    Array.prototype.forEach.call(document.body.children, function (el) {
+      if (el === lightbox || el.tagName === 'SCRIPT') return;
+      if (on) el.setAttribute('inert', '');
+      else el.removeAttribute('inert');
+    });
+  }
   function openLightbox(trigger) {
     if (!lightbox) return;
     lbTrigger = trigger || null;
     lightbox.hidden = false;
     body.classList.add('lb-open');
+    setBackgroundInert(true);
     if (lbClose) lbClose.focus();
     announce('看板截图已放大，按 Escape 关闭');
   }
@@ -338,6 +386,7 @@
     if (!lightbox || lightbox.hidden) return;
     lightbox.hidden = true;
     body.classList.remove('lb-open');
+    setBackgroundInert(false);
     if (lbTrigger) lbTrigger.focus();
     lbTrigger = null;
   }
@@ -350,11 +399,15 @@
     });
   }
   if (lbClose) lbClose.addEventListener('click', closeLightbox);
-  /* Esc 关弹层；灯箱打开时把 Tab 圈在里面 */
+  /* Esc 关弹层；弹层打开时把 Tab 圈在里面（菜单与灯箱共用一套逻辑） */
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') { closeLightbox(); closeMenu(); return; }
-    if (e.key !== 'Tab' || !lightbox || lightbox.hidden) return;
-    var f = $$('button, [href], [tabindex]:not([tabindex="-1"])', lightbox);
+    if (e.key === 'Escape') { closeLightbox(); closeMenu(true); return; }
+    if (e.key !== 'Tab') return;
+    var scope = menuIsOpen() ? menu : ((lightbox && !lightbox.hidden) ? lightbox : null);
+    if (!scope) return;
+    var f = $$('a[href], button, [tabindex]:not([tabindex="-1"])', scope).filter(function (el) {
+      return el.getClientRects().length > 0;
+    });
     if (!f.length) return;
     var first = f[0], last = f[f.length - 1];
     if (e.shiftKey && document.activeElement === first) { last.focus(); e.preventDefault(); }
