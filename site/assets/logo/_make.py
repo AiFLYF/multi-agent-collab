@@ -152,18 +152,17 @@ emit("mark-mono.svg", wrap(VIEW, VIEW, "",
          mark_body("currentColor", ["currentColor"] * 6, "currentColor",
                    halo=False, link_op="0.5")))
 
-# ── 3) favicon：16px 下彩色圆点会糊，改用单色粗线 + 放大核心；
-#      并在 SVG 内按 prefers-color-scheme 换色，亮色标签栏也能看清 ──
+# ── 3) favicon：16px 下彩色圆点会糊，改用单色粗线 + 放大核心。
+#      颜色必须写在**呈现属性**（stroke=/fill=）里，不能写内联 style：
+#      呈现属性优先级最低，<style> 里的浅色分支才盖得住它；写成内联 style
+#      反而会让 prefers-color-scheme 分支彻底失效（踩过）。
 favicon = wrap(VIEW, VIEW, "", mark_body(
-    "var(--fav-ink)", [], "var(--fav-ink)", halo=False,
+    CY, [], CY, halo=False,
     core_r=15.5, link_r0=14.0, link_r1=39.0, link_w=7.6, link_op="0.92"))
 favicon = favicon.replace(
-    '<svg xmlns="http://www.w3.org/2000/svg"',
-    '<svg xmlns="http://www.w3.org/2000/svg" style="--fav-ink:%s"' % CY)
-favicon = favicon.replace(
     "</svg>\n",
-    '<style>:root{--fav-ink:%s}@media (prefers-color-scheme:light){:root{--fav-ink:%s}}</style>\n</svg>\n'
-    % (CY, CY_LIGHT))
+    '<style>@media (prefers-color-scheme:light){line{stroke:%s}path{fill:%s}}</style>\n</svg>\n'
+    % (CY_LIGHT, CY_LIGHT))
 emit("favicon.svg", favicon)
 
 # ── 4) 磁贴：圆角版（头像 / 展示用）+ 直角满幅版（iOS 主屏 / PWA，

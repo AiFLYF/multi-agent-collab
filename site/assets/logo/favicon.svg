@@ -1,10 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" style="--fav-ink:#46E0FF" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="multi-agent-collab">
-  <line x1="48" y1="34" x2="48" y2="9" stroke="var(--fav-ink)" stroke-opacity="0.92" stroke-width="7.6" stroke-linecap="round"/>
-  <line x1="60.12" y1="41" x2="81.77" y2="28.5" stroke="var(--fav-ink)" stroke-opacity="0.92" stroke-width="7.6" stroke-linecap="round"/>
-  <line x1="60.12" y1="55" x2="81.77" y2="67.5" stroke="var(--fav-ink)" stroke-opacity="0.92" stroke-width="7.6" stroke-linecap="round"/>
-  <line x1="48" y1="62" x2="48" y2="87" stroke="var(--fav-ink)" stroke-opacity="0.92" stroke-width="7.6" stroke-linecap="round"/>
-  <line x1="35.88" y1="55" x2="14.23" y2="67.5" stroke="var(--fav-ink)" stroke-opacity="0.92" stroke-width="7.6" stroke-linecap="round"/>
-  <line x1="35.88" y1="41" x2="14.23" y2="28.5" stroke="var(--fav-ink)" stroke-opacity="0.92" stroke-width="7.6" stroke-linecap="round"/>
-  <path d="M48 32.5 L61.42 40.25 L61.42 55.75 L48 63.5 L34.58 55.75 L34.58 40.25 Z" fill="var(--fav-ink)"/>
-<style>:root{--fav-ink:#46E0FF}@media (prefers-color-scheme:light){:root{--fav-ink:#0E7FA8}}</style>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="multi-agent-collab">
+  <line x1="48" y1="34" x2="48" y2="9" stroke="#46E0FF" stroke-opacity="0.92" stroke-width="7.6" stroke-linecap="round"/>
+  <line x1="60.12" y1="41" x2="81.77" y2="28.5" stroke="#46E0FF" stroke-opacity="0.92" stroke-width="7.6" stroke-linecap="round"/>
+  <line x1="60.12" y1="55" x2="81.77" y2="67.5" stroke="#46E0FF" stroke-opacity="0.92" stroke-width="7.6" stroke-linecap="round"/>
+  <line x1="48" y1="62" x2="48" y2="87" stroke="#46E0FF" stroke-opacity="0.92" stroke-width="7.6" stroke-linecap="round"/>
+  <line x1="35.88" y1="55" x2="14.23" y2="67.5" stroke="#46E0FF" stroke-opacity="0.92" stroke-width="7.6" stroke-linecap="round"/>
+  <line x1="35.88" y1="41" x2="14.23" y2="28.5" stroke="#46E0FF" stroke-opacity="0.92" stroke-width="7.6" stroke-linecap="round"/>
+  <path d="M48 32.5 L61.42 40.25 L61.42 55.75 L48 63.5 L34.58 55.75 L34.58 40.25 Z" fill="#46E0FF"/>
+<style>@media (prefers-color-scheme:light){line{stroke:#0E7FA8}path{fill:#0E7FA8}}</style>
 </svg>
