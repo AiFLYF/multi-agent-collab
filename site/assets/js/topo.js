@@ -33,7 +33,7 @@
     try { v = getComputedStyle(document.documentElement).getPropertyValue(name).trim(); } catch (e) { /* 忽略 */ }
     return v || fallback;
   }
-  var PLATFORM_NAMES = ['Claude Code', 'Codex CLI', 'OpenCode', 'Pi', 'Trae IDE', 'WorkBuddy'];
+  var PLATFORM_NAMES = ['Claude Code', 'Codex', 'OpenCode', 'Pi', 'Trae IDE', 'WorkBuddy'];
   var PLATFORM_KEYS = ['--c-cld', '--c-cdx', '--c-opc', '--c-pi0', '--c-tr4', '--c-wb0'];
   var PLATFORM_FALLBACK = ['#FF8A50', '#37D67A', '#53C8FF', '#B79CFF', '#6E9BFF', '#D9F24A'];
   var PLATFORMS = PLATFORM_KEYS.map(function (key, i) {
