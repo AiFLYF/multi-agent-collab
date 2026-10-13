@@ -197,7 +197,10 @@ body.is-loaded .pre-dots i{animation:none;background:var(--cy);box-shadow:0 0 12
 .site-head{position:fixed;top:0;left:0;right:0;z-index:50;display:flex;align-items:center;gap:26px;padding:14px 30px;border-bottom:1px solid transparent;transition:background .35s,border-color .35s}
 .site-head.solid{background:rgba(5,7,12,.82);backdrop-filter:blur(14px) saturate(130%);-webkit-backdrop-filter:blur(14px) saturate(130%);border-bottom-color:var(--line)}
 .brand{display:flex;align-items:center;gap:12px;flex:none;min-width:0}
-.brand svg{width:20px;height:20px;flex:none;stroke:var(--cy);fill:none;stroke-width:1.6;transition:transform .5s var(--ease)}
+.brand svg{width:20px;height:20px;flex:none;transition:transform .5s var(--ease)}
+/* 品牌标记 = logo 的简化版（六条连线 + 六边形黑板核心），与 favicon 同一形状 */
+.brand .bm-link{stroke:var(--cy);stroke-width:7.6;stroke-linecap:round;fill:none;opacity:.92}
+.brand .bm-core{fill:var(--cy);stroke:none}
 .brand:hover svg{transform:rotate(90deg)}
 .brand b{font-family:var(--sans);font-weight:800;font-size:14.5px;letter-spacing:.02em;white-space:nowrap}
 .brand span{font-size:10px;letter-spacing:.22em;color:var(--cy-soft);border:1px solid var(--line2);padding:3px 8px;white-space:nowrap}
