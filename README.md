@@ -1,4 +1,9 @@
-# multi-agent-collab
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="site/assets/logo/logo.svg">
+    <img alt="multi-agent-collab" src="site/assets/logo/logo-light.svg" width="440">
+  </picture>
+</h1>
 
 [![python](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](#)

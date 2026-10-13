@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="multi-agent-collab">
+  <line x1="48" y1="35.5" x2="48" y2="15.5" stroke="currentColor" stroke-opacity="0.5" stroke-width="3.2" stroke-linecap="round"/>
+  <line x1="58.83" y1="41.75" x2="76.15" y2="31.75" stroke="currentColor" stroke-opacity="0.5" stroke-width="3.2" stroke-linecap="round"/>
+  <line x1="58.83" y1="54.25" x2="76.15" y2="64.25" stroke="currentColor" stroke-opacity="0.5" stroke-width="3.2" stroke-linecap="round"/>
+  <line x1="48" y1="60.5" x2="48" y2="80.5" stroke="currentColor" stroke-opacity="0.5" stroke-width="3.2" stroke-linecap="round"/>
+  <line x1="37.17" y1="54.25" x2="19.85" y2="64.25" stroke="currentColor" stroke-opacity="0.5" stroke-width="3.2" stroke-linecap="round"/>
+  <line x1="37.17" y1="41.75" x2="19.85" y2="31.75" stroke="currentColor" stroke-opacity="0.5" stroke-width="3.2" stroke-linecap="round"/>
+  <circle cx="48" cy="11" r="5" fill="currentColor"/>
+  <circle cx="80.04" cy="29.5" r="5" fill="currentColor"/>
+  <circle cx="80.04" cy="66.5" r="5" fill="currentColor"/>
+  <circle cx="48" cy="85" r="5" fill="currentColor"/>
+  <circle cx="15.96" cy="66.5" r="5" fill="currentColor"/>
+  <circle cx="15.96" cy="29.5" r="5" fill="currentColor"/>
+  <path d="M48 34 L60.12 41 L60.12 55 L48 62 L35.88 55 L35.88 41 Z" fill="currentColor"/>
+</svg>
