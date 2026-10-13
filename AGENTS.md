@@ -157,7 +157,7 @@
 ## 7. 各平台入口（本机文件；**新建对话**才加载，改完旧对话不刷新）
 
 - **AGENTS.md 原生派（零配置，根 AGENTS.md 自动生效）**：Claude Code / TraeCode CLI、
-  **OpenAI Codex CLI**、**OpenCode（sst）**、**Pi（pi.dev）**
+  **Codex**、**OpenCode（sst）**、**Pi（pi.dev）**
 - Trae：`.trae/rules/git-flow-agent.md`（alwaysApply，要求先读本文件）
 - WorkBuddy：`.workbuddy-ai/` 是本文件镜像，改完跑 `install.py mirror`
 - 斜杠命令：`.claude/commands/git-flow.md`（`/git-flow <任务>`）

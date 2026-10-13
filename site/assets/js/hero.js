@@ -28,7 +28,7 @@
   }
   var PLATFORMS = [
     { code: 'CLD', name: 'Claude Code', color: cssVar('--c-cld', '#FF8A50'), style: 'rows' },
-    { code: 'CDX', name: 'Codex CLI', color: cssVar('--c-cdx', '#37D67A'), style: 'beam' },
+    { code: 'CDX', name: 'Codex', color: cssVar('--c-cdx', '#37D67A'), style: 'beam' },
     { code: 'OPC', name: 'OpenCode', color: cssVar('--c-opc', '#53C8FF'), style: 'wave' },
     { code: 'PI0', name: 'Pi', color: cssVar('--c-pi0', '#B79CFF'), style: 'spiral' },
     { code: 'TR4', name: 'Trae IDE', color: cssVar('--c-tr4', '#6E9BFF'), style: 'dash' },
@@ -48,6 +48,11 @@
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     reserveRight = (sideIndexEl && getComputedStyle(sideIndexEl).display !== 'none') ? 168 : 20;
     computeOrigins();
+    /* 降级模式没有 rAF 循环在跑：改 canvas.width 会把画布清空，而
+       fonts.ready 与 window load 之后还会各触发一次 resize()，不补这一帧
+       画面就永久空着（实测 reduce 下整块画布非透明像素为 0）。
+       ——「减少动态效果」的用户不该什么都看不到。 */
+    if (reduceMotion) frame(performance.now());
   }
 
   /* ── 共享黑板：位置来自 DOM 卡片 ─────────────────────────── */

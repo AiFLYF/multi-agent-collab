@@ -28,7 +28,7 @@ multi-agent-collab 给"一个项目里多个 AI 助手（外加你）"的协作�
 
 ```
   Claude Code ─┐
-  Codex CLI   ─┤
+  Codex       ─┤
   OpenCode    ─┤         <你的项目>/.agents/
   Pi          ─┼── 读同一份规则 ──▶  ├── sessions/  谁在哪个分支干什么（心跳）
   Trae IDE    ─┤                     ├── worklog/   今天做完了什么
@@ -160,7 +160,7 @@ OK 看板无告警：活跃3，无失活/未答/worktree 异常，可直接开�
 | 平台 | 怎么生效 |
 |---|---|
 | **Claude Code / TraeCode CLI** | 根目录 `AGENTS.md` 自动加载 |
-| **OpenAI Codex CLI** | 原生自动加载 `AGENTS.md`（另有 `~/.codex/AGENTS.md` 全局位） |
+| **Codex** | 原生自动加载 `AGENTS.md`（另有 `~/.codex/AGENTS.md` 全局位） |
 | **OpenCode（sst/opencode）** | `AGENTS.md` 就是它的项目规则（官方约定） |
 | **Pi（pi.dev）** | 自动从项目目录发现 `AGENTS.md` |
 | **Trae IDE** | 安装器写入 `.trae/rules/git-flow-agent.md`（新对话自动生效） |
