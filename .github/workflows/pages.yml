@@ -31,11 +31,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 仓库尚未启用 Pages 时自动开启（已在设置里开过就跳过）
+      # 注意：这里不能写 `enablement: true`。
+      # GITHUB_TOKEN 没有「创建 Pages 站点」的权限——仓库还没开 Pages 时它会直接
+      # 报 "Resource not accessible by integration" 并把整个部署 fail 掉（踩过）。
+      # 首次启用必须由有 repo 权限的人做一次：
+      #     gh api -X POST repos/<owner>/<repo>/pages -f build_type=workflow
+      # 之后本工作流只管发布，不再碰站点开关。
       - name: Configure Pages
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       # 只发布 site/ 目录 —— 整个站点是自包含的（字体与 three.js 都在
       # site/vendor/ 下），不需要构建步骤
