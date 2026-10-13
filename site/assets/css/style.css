@@ -129,7 +129,7 @@ html.js body.is-booting{overflow:hidden}
   mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent)}
 .marquee-track{display:flex;width:max-content;animation:marquee 46s linear infinite}
 .marquee-group{display:flex;align-items:center;flex:none}
-.marquee-group span{display:inline-flex;align-items:center;padding:0 var(--s4);font-family:var(--mono);font-size:11.5px;letter-spacing:.16em;color:var(--tx2);white-space:nowrap}
+.marquee-group span{display:inline-flex;align-items:center;padding:0 var(--s4);font-family:var(--mono);font-size:12px;letter-spacing:.14em;color:var(--tx2);white-space:nowrap}
 .marquee-group i{font-style:normal;color:var(--cy);opacity:.6;font-size:10px}
 .marquee:hover .marquee-track{animation-play-state:paused}
 @keyframes marquee{from{transform:translate3d(0,0,0)}to{transform:translate3d(-50%,0,0)}}
@@ -201,10 +201,10 @@ body.is-loaded .pre-dots i{animation:none;background:var(--cy);box-shadow:0 0 12
 .brand:hover svg{transform:rotate(90deg)}
 .brand b{font-family:var(--sans);font-weight:800;font-size:14.5px;letter-spacing:.02em;white-space:nowrap}
 .brand span{font-size:10px;letter-spacing:.22em;color:var(--cy-soft);border:1px solid var(--line2);padding:3px 8px;white-space:nowrap}
-.site-nav{display:flex;gap:3px;margin-left:auto;font-size:10.5px;letter-spacing:.14em;color:var(--tx2)}
+.site-nav{display:flex;gap:3px;margin-left:auto;font-size:11px;letter-spacing:.12em;color:var(--tx2)}
 .site-nav a{display:flex;gap:7px;align-items:baseline;padding:6px 11px;border:1px solid transparent;transition:.25s}
 .site-nav a i{font-style:normal;font-size:9px;color:var(--tx3)}
-.site-nav a:hover,.site-nav a.on{color:var(--acc);border-color:var(--line);background:rgba(70,224,255,.05)}
+.site-nav a:hover,.site-nav a.on{color:var(--acc);border-color:color-mix(in srgb,var(--acc) 32%,transparent);background:color-mix(in srgb,var(--acc) 10%,transparent)}
 .site-nav a.on i{color:var(--acc)}
 .head-meta{margin-left:14px;display:flex;align-items:center;gap:10px;font-size:10px;letter-spacing:.16em;color:var(--tx3);white-space:nowrap}
 .live-dot{width:6px;height:6px;border-radius:50%;background:var(--cy);box-shadow:0 0 10px rgba(70,224,255,.9);animation:blink 2.4s infinite;flex:none}
@@ -215,8 +215,11 @@ body.is-loaded .pre-dots i{animation:none;background:var(--cy);box-shadow:0 0 12
 .burger span:nth-child(1){top:14px}.burger span:nth-child(2){bottom:14px}
 .burger.open span:nth-child(1){top:18px;transform:rotate(45deg)}
 .burger.open span:nth-child(2){bottom:18px;transform:rotate(-45deg)}
-.menu{position:fixed;inset:0;z-index:49;background:rgba(5,7,12,.96);backdrop-filter:blur(18px);display:flex;flex-direction:column;justify-content:center;gap:4px;padding:0 30px;opacity:0;visibility:hidden;transition:.35s var(--ease)}
-.menu.open{opacity:1;visibility:visible}
+/* visibility 用 0s 延迟切换（关闭时延后 0.35s 让淡出看得见）：
+   若让 visibility 也走 0.35s 过渡，打开瞬间它仍是 hidden，
+   同步调用的 focus() 会失败 —— 焦点根本进不了菜单 */
+.menu{position:fixed;inset:0;z-index:49;background:rgba(5,7,12,.96);backdrop-filter:blur(18px);display:flex;flex-direction:column;justify-content:center;gap:4px;padding:0 30px;opacity:0;visibility:hidden;transition:opacity .35s var(--ease),visibility 0s linear .35s}
+.menu.open{opacity:1;visibility:visible;transition:opacity .35s var(--ease),visibility 0s linear 0s}
 .menu-nav{display:flex;flex-direction:column;width:100%}
 .menu a{display:flex;align-items:baseline;gap:16px;padding:13px 0;border-bottom:1px solid var(--line);font-size:20px;font-weight:600;font-family:var(--sans);transition:color .25s,padding-left .25s}
 .menu a:hover{color:var(--cy);padding-left:6px}
@@ -224,11 +227,13 @@ body.is-loaded .pre-dots i{animation:none;background:var(--cy);box-shadow:0 0 12
 .menu a span{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--tx3);font-weight:400;letter-spacing:.14em}
 
 /* 侧索引 */
-.side-index{position:fixed;right:20px;top:50%;transform:translateY(-50%);z-index:40;display:flex;flex-direction:column;gap:13px}
-.side-index button{background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:9px;flex-direction:row-reverse;padding:2px 0;transition:transform .3s var(--ease)}
+/* 侧索引：命中区撑到 ~44px（视觉尺寸不变），并移出 Tab 序 ——
+   它与顶栏导航指向完全相同的 7 个章节，不该让键盘用户多穿 7 个站 */
+.side-index{position:fixed;right:20px;top:50%;transform:translateY(-50%);z-index:40;display:flex;flex-direction:column;gap:0}
+.side-index button{background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:9px;flex-direction:row-reverse;padding:15px 0;transition:transform .3s var(--ease)}
 .side-index button:active{transform:scale(1.12)}
-.side-index .si-num{font-family:var(--mono);font-size:9px;color:var(--tx3);transition:color .25s}
-.side-index .si-label{font-family:var(--mono);font-size:9px;letter-spacing:.12em;color:var(--tx3);opacity:0;transform:translateX(6px);transition:.3s var(--ease)}
+.side-index .si-num{font-family:var(--mono);font-size:10px;color:var(--tx3);transition:color .25s}
+.side-index .si-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--tx3);opacity:0;transform:translateX(6px);transition:.3s var(--ease)}
 .side-index button::before{content:'';width:12px;height:1px;background:var(--tx3);transition:.3s var(--ease)}
 .side-index button.on .si-num,.side-index button.on .si-label{color:var(--acc);opacity:1;transform:none}
 .side-index button.on::before{width:20px;background:var(--acc);box-shadow:0 0 8px var(--acc)}
@@ -246,7 +251,7 @@ body.is-loaded .pre-dots i{animation:none;background:var(--cy);box-shadow:0 0 12
 .rv.in{opacity:1;transform:none}
 .statement{font-family:var(--sans);font-size:clamp(30px,5vw,56px);line-height:1.16;font-weight:800;letter-spacing:-.01em;margin-bottom:var(--s7);text-wrap:balance}
 .statement .st-line{display:block}
-.statement em{font-style:normal;color:var(--cy)}
+.statement em{font-style:normal;color:var(--acc);transition:color .4s linear}
 .lede{color:var(--tx2);max-width:780px;font-size:15px;text-wrap:pretty}
 .lede strong{color:var(--tx)}
 
@@ -265,7 +270,7 @@ body.is-loaded .pre-dots i{animation:none;background:var(--cy);box-shadow:0 0 12
 
 /* 数据条 */
 .strip{display:flex;flex-wrap:wrap;gap:var(--s3) 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:var(--s10)}
-.strip span{display:inline-flex;align-items:center;gap:9px;padding:15px 26px;font-size:10.5px;letter-spacing:.14em;color:var(--tx3)}
+.strip span{display:inline-flex;align-items:center;gap:9px;padding:15px 26px;font-size:11.5px;letter-spacing:.12em;color:var(--tx3)}
 .strip span + span{border-left:1px solid var(--line)}
 .strip b{color:var(--cy);font-weight:600;font-size:14px;font-family:var(--mono)}
 .strip i{font-style:normal;color:var(--am)}
@@ -279,11 +284,19 @@ body.is-loaded .pre-dots i{animation:none;background:var(--cy);box-shadow:0 0 12
 .hero-wrap{display:grid;grid-template-columns:minmax(0,1.12fr) minmax(0,.88fr);gap:44px;align-items:center;position:relative;z-index:3}
 .hero-copy{min-width:0}          /* 网格子项默认 min-width:auto，长串代码会把列撑破 */
 .eyebrow{display:inline-flex;align-items:center;gap:10px;font-size:11px;letter-spacing:.18em;color:var(--tx2);border:1px solid var(--line2);padding:8px 16px;margin-bottom:var(--s6);background:rgba(5,7,12,.6)}
-.hero-title{font-family:var(--sans);font-size:clamp(32px,5.4vw,60px);line-height:1.14;font-weight:800;letter-spacing:-.015em;margin-bottom:var(--s6);word-break:keep-all}
+.hero-title{font-family:var(--sans);font-size:clamp(30px,4.9vw,60px);line-height:1.14;font-weight:800;letter-spacing:-.015em;margin-bottom:var(--s6);word-break:keep-all}
 .hero-title .ht-row{display:block;overflow:hidden}
-.hero-title .ht-line{display:block;transform:translateY(110%);transition:transform 1s var(--ease);transition-delay:var(--d,0s)}
+/* 渐进增强：默认不位移，JS 失效时 H1 照样看得见（原来默认 translateY(110%)
+   又被 .ht-row 的 overflow:hidden 裁掉，禁用 JS 时首屏标题整块消失）。
+   初始位移改由 .js 提供，再靠 body.is-loaded 复位。 */
+.hero-title .ht-line{display:block;transition:transform 1s var(--ease);transition-delay:var(--d,0s);text-wrap:balance}
+html.js .hero-title .ht-line{transform:translateY(110%)}
 body.is-loaded .hero-title .ht-line{transform:none}
-.hero-title .ht-outline{-webkit-text-stroke:1.5px rgba(223,241,250,.75);color:transparent}
+/* 描边字给一层极低透明度填充：保住镂空感，同时兜住可读性与高对比模式 */
+.hero-title .ht-outline{-webkit-text-stroke:1.5px rgba(223,241,250,.75);color:rgba(223,241,250,.07)}
+@media (forced-colors:active){
+  .hero-title .ht-outline{color:CanvasText;-webkit-text-stroke:0}
+}
 .hero-sub{color:var(--tx2);max-width:600px;font-size:15.5px;margin-bottom:var(--s7);text-wrap:pretty}
 .hero-sub strong{color:var(--tx)}
 .hero-sub code{white-space:nowrap}
@@ -313,8 +326,8 @@ body.is-loaded .hero-title .ht-line{transform:none}
 .bc-row:hover::before{opacity:.8}
 .bc-row.flash{background:rgba(70,224,255,.09)}
 .bc-row.flash::before{opacity:1;box-shadow:0 0 12px var(--slot)}
-.bc-k{font-size:11.5px;color:var(--slot);letter-spacing:.04em;min-width:88px}
-.bc-v{font-size:11.5px;color:var(--tx3);letter-spacing:.03em}
+.bc-k{font-size:12px;color:var(--slot);letter-spacing:.04em;min-width:88px}
+.bc-v{font-size:12px;color:var(--tx3);letter-spacing:.03em}
 .bc-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:13px 18px;font-size:10px;letter-spacing:.14em;color:var(--tx3)}
 .bc-conv{display:inline-flex;align-items:center;gap:10px}
 .bc-conv::before{content:'';width:26px;height:1px;background:repeating-linear-gradient(90deg,var(--line2) 0 4px,transparent 4px 8px)}
@@ -415,13 +428,13 @@ body.is-loaded .hero-title .ht-line{transform:none}
 .bf-bar{display:flex;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid var(--line);background:rgba(9,15,24,.5)}
 .bf-bar i{width:9px;height:9px;border-radius:50%;opacity:.75;flex:none}
 .bf-bar i:nth-child(1){background:var(--rd)}.bf-bar i:nth-child(2){background:var(--am)}.bf-bar i:nth-child(3){background:var(--cy)}
-.bf-bar span{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--tx3);letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bf-bar span{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--tx3);letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bf-zoom{display:block;width:100%;padding:0;border:none;background:none;cursor:zoom-in;position:relative;line-height:0}
 .bf-zoom img{width:100%;height:auto}
 .bf-zoom-tag{position:absolute;right:10px;bottom:10px;font-size:10px;letter-spacing:.1em;color:var(--tx2);background:rgba(5,7,12,.78);border:1px solid var(--line2);padding:5px 10px;opacity:0;transform:translateY(4px);transition:.3s var(--ease);line-height:1.6}
 .bf-zoom:hover .bf-zoom-tag,.bf-zoom:focus-visible .bf-zoom-tag{opacity:1;transform:none}
 @media (pointer:coarse){.bf-zoom-tag{opacity:1;transform:none}}
-.bf-cap{padding:12px 16px;font-family:var(--mono);font-size:10.5px;color:var(--tx3);letter-spacing:.06em;border-top:1px solid var(--line)}
+.bf-cap{padding:12px 16px;font-family:var(--mono);font-size:12px;color:var(--tx3);letter-spacing:.05em;border-top:1px solid var(--line)}
 
 /* 截图放大 */
 .lightbox{position:fixed;inset:0;z-index:95;background:rgba(3,5,9,.92);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:clamp(16px,4vw,56px);animation:lbIn .28s var(--ease)}
@@ -446,7 +459,7 @@ body.lb-open{overflow:hidden}
 .topo-label.is-center{font-size:12px;color:var(--cy)}
 .topo-label.is-human{color:var(--am)}
 .topo-label.is-human u{color:rgba(255,184,77,.75)}
-.topo-cap{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:14px 20px;border-top:1px solid var(--line);font-family:var(--mono);font-size:10.5px;color:var(--tx3);letter-spacing:.08em}
+.topo-cap{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:14px 20px;border-top:1px solid var(--line);font-family:var(--mono);font-size:11.5px;color:var(--tx3);letter-spacing:.07em}
 .topo-legend{display:flex;gap:18px;flex-wrap:wrap}
 .topo-legend i{font-style:normal;display:inline-flex;align-items:center;gap:7px}
 .topo-legend i::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--cy)}
@@ -501,7 +514,7 @@ body.lb-open{overflow:hidden}
 .bound li{padding-left:16px;position:relative}
 .bound li::before{content:'—';position:absolute;left:0;color:var(--tx3)}
 .cta-row{display:flex;gap:14px;flex-wrap:wrap;margin-top:var(--s11)}
-.site-foot{border-top:1px solid var(--line);margin-top:var(--s12);padding:30px 0 34px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;color:var(--tx3)}
+.site-foot{border-top:1px solid var(--line);margin-top:var(--s12);padding:30px 0 34px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;color:var(--tx3)}
 .site-foot a:hover{color:var(--cy)}
 .foot-mid{margin:0 auto}
 .to-top{margin-left:auto;background:none;border:1px solid var(--line2);color:var(--tx2);font-family:var(--mono);font-size:10px;letter-spacing:.12em;padding:8px 14px;cursor:pointer;display:flex;gap:8px;align-items:center;transition:.25s}
@@ -538,7 +551,8 @@ body.from-file .file-note{display:block}
   .hero::after{background:linear-gradient(180deg,rgba(5,7,12,.72) 0%,rgba(5,7,12,.9) 52%,rgba(5,7,12,.96) 100%)}
   .board-card{margin-top:34px;max-width:560px}
   .console-log{width:calc(100% - 68px)}
-  .hud-tr,.hud-br{display:none}
+  /* 单列之后 eyebrow 上移到 padding-top，三个 HUD 角标都会压到它 —— 一起收掉 */
+  .hud-tl,.hud-tr,.hud-br{display:none}
   .board-list{grid-template-columns:1fr;gap:var(--s4)}
   .board-list li:last-child{grid-column:auto}
   .marquee{margin-top:var(--s9)}
@@ -556,11 +570,13 @@ body.from-file .file-note{display:block}
   .sec{padding:var(--s11) 0}
   .sec-head{margin-bottom:var(--s5)}
   .hero{padding-top:var(--s11)}
-  .hud-tl{top:70px;font-size:9px;letter-spacing:.1em}
   .hero-title{margin-bottom:var(--s5)}
   .hero-sub{font-size:14.5px;margin-bottom:var(--s6)}
   .strip{gap:var(--s2) 0;margin-top:var(--s9)}
-  .strip span{padding:11px 14px;font-size:9.5px;letter-spacing:.08em}
+  /* 折行后行首元素仍带左边框会变成两条悬空竖线（.strip span + span 只按
+     DOM 顺序加分隔线，不知道元素换行了）—— 小屏直接去掉竖线，靠间距分组 */
+  .strip span{padding:10px 0;font-size:11.5px;letter-spacing:.06em}
+  .strip span + span{border-left:none;padding-left:14px}
   .strip b{font-size:13px}
   .stat-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:var(--s8) 0 var(--s1)}
   .stat{padding:18px 16px;gap:10px}
@@ -589,21 +605,25 @@ body.from-file .file-note{display:block}
   .board-list li{font-size:13.5px;gap:12px}
   .bl-i{width:30px;height:30px;font-size:10.5px}
   .board-figure{margin-top:var(--s6)}
-  .bf-bar span{font-size:9.5px}
-  .bf-cap{font-size:9.5px;padding:10px 12px}
+  .bf-bar span{font-size:10.5px}
+  .bf-cap{font-size:11.5px;padding:10px 12px}
   .topo-view{height:420px}
   .topo-label{font-size:10px}
   .topo-label u{display:none}
-  .topo-cap{font-size:9.5px;gap:8px;padding:12px 16px}
+  .topo-cap{font-size:11px;gap:8px;padding:12px 16px}
   .tabs{margin-top:var(--s8)}
   /* 三个标签横排要 458px，390px 屏只有 348px 可用 —— 横排要么挤成 8px 字，
      要么被裁掉第三个。改成带左侧色条的选项列表：照样一眼看出选中哪个。 */
   .tab-bar{flex-direction:column}
   .tab{flex:none;width:100%;text-align:left;padding:14px 16px;font-size:11px;letter-spacing:.06em;border-bottom:1px solid var(--line);border-left:2px solid transparent}
   .tab:last-child{border-bottom:none}
-  .tab.is-on{border-bottom-color:var(--line);border-left-color:var(--acc);background:rgba(70,224,255,.05);color:var(--acc)}
-  .tab.is-on i{color:var(--acc)}
-  .code pre{font-size:12px;padding:14px 16px}
+  /* 标签是自成一体的控件，选中态用固定的青，不跟章节强调色走
+     （否则从第 06 章滚回第 01 章，选中 tab 的颜色会跟着变） */
+  .tab.is-on{border-bottom-color:var(--line);border-left-color:var(--cy);background:rgba(70,224,255,.05);color:var(--cy)}
+  .tab.is-on i{color:var(--cy)}
+  /* 窄屏代码块改折行：原来 409–547px 的内容塞进 348px 只能硬截断，
+     而隐藏式滚动条不给任何提示，读者会以为内容坏了 */
+  .code pre{font-size:12px;padding:14px 16px;white-space:pre-wrap;overflow-wrap:anywhere;overflow-x:visible}
   .cmd-table{font-size:12.5px}
   .cmd-table td.cmd{white-space:normal;font-size:11.5px}
   .bounds{margin-top:var(--s5);gap:14px}
@@ -629,8 +649,8 @@ body.from-file .file-note{display:block}
   .brand svg{width:18px;height:18px}
   .board-card{margin-top:var(--s5)}
   .bc-head,.bc-row,.bc-foot{padding-left:14px;padding-right:14px}
-  .bc-k{min-width:74px;font-size:11px}
-  .bc-v{font-size:11px}
+  .bc-k{min-width:74px;font-size:11.5px}
+  .bc-v{font-size:11.5px}
   .strip span{padding:10px 12px}
   .stat-grid{grid-template-columns:1fr}
 }

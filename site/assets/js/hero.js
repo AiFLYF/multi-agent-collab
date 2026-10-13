@@ -18,14 +18,21 @@
   var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var MONO = '"PlexMono",Consolas,"Microsoft YaHei",monospace';
 
-  /* 六个信号源：呼号 / 平台 / 色 / 运动签名 */
+  /* 六个信号源：呼号 / 平台 / 色 / 运动签名
+     色值唯一来源是 style.css 的 --c-* 变量（topo.js 读同一组），
+     否则同一个平台在首屏画布和第 05 章拓扑图里会是两种颜色 */
+  function cssVar(name, fallback) {
+    var v = '';
+    try { v = getComputedStyle(document.documentElement).getPropertyValue(name).trim(); } catch (e) { /* 忽略 */ }
+    return v || fallback;
+  }
   var PLATFORMS = [
-    { code: 'CLD', name: 'Claude Code', color: '#FF8A50', style: 'rows' },
-    { code: 'CDX', name: 'Codex CLI', color: '#37D67A', style: 'beam' },
-    { code: 'OPC', name: 'OpenCode', color: '#53C8FF', style: 'wave' },
-    { code: 'PI0', name: 'Pi', color: '#B79CFF', style: 'spiral' },
-    { code: 'TR4', name: 'Trae IDE', color: '#6E9BFF', style: 'dash' },
-    { code: 'WB0', name: 'WorkBuddy', color: '#D9F24A', style: 'hop' }
+    { code: 'CLD', name: 'Claude Code', color: cssVar('--c-cld', '#FF8A50'), style: 'rows' },
+    { code: 'CDX', name: 'Codex CLI', color: cssVar('--c-cdx', '#37D67A'), style: 'beam' },
+    { code: 'OPC', name: 'OpenCode', color: cssVar('--c-opc', '#53C8FF'), style: 'wave' },
+    { code: 'PI0', name: 'Pi', color: cssVar('--c-pi0', '#B79CFF'), style: 'spiral' },
+    { code: 'TR4', name: 'Trae IDE', color: cssVar('--c-tr4', '#6E9BFF'), style: 'dash' },
+    { code: 'WB0', name: 'WorkBuddy', color: cssVar('--c-wb0', '#D9F24A'), style: 'hop' }
   ];
   var N_PER = 26;          /* 每路粒子数 */
 

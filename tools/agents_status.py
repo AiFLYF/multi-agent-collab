@@ -931,16 +931,28 @@ _DASHBOARD_HTML = r"""<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>本机协作看板</title>
+<!-- 内联 SVG 图标：浏览器默认会去请求 /favicon.ico，服务端只认 / /data /directive，
+     于是每个访客都留一条 404 控制台报错。用 data URI 直接消除，且不破坏「零外链」 -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2315171c'/%3E%3Cg stroke='%232563eb' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M16 5.5v6M16 20.5v6M5.5 16h6M20.5 16h6'/%3E%3C/g%3E%3Ccircle cx='16' cy='16' r='4.6' fill='%232563eb'/%3E%3C/svg%3E">
 <style>
   :root {
     --bg:#f5f6f8; --panel:#ffffff; --ink:#1f2329; --muted:#6b7280;
     --line:#e5e7eb; --green:#16a34a; --red:#dc2626; --amber:#d97706;
     --gray:#9ca3af; --blue:#2563eb; --chip:#eef2f7;
+    /* 「已结束」会话的正文色：不再靠整体 opacity 弱化（那会等比压低
+       所有子元素的对比度，白底上只剩 ~3.2:1），改用显式的灰，仍有 5.5:1 */
+    --done-ink:#5b6472;
   }
   @media (prefers-color-scheme: dark) {
     :root { --bg:#15171c; --panel:#1e2128; --ink:#e5e7eb; --muted:#9aa3af;
-      --line:#2e333d; --chip:#262b34; }
+      --line:#2e333d; --chip:#262b34; --done-ink:#8b95a3; }
   }
+  /* 键盘用户在这块深色看板上只能看到浏览器默认描边，与页面风格不搭；
+     同一产品的介绍页早有统一焦点环，这里补齐 */
+  :focus-visible { outline:2px solid var(--blue); outline-offset:2px;
+    border-radius:6px; }
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+    overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--ink);
     font-family:-apple-system,"Segoe UI","Microsoft YaHei",Roboto,Helvetica,Arial,sans-serif;
@@ -974,13 +986,15 @@ _DASHBOARD_HTML = r"""<!doctype html>
   section { background:var(--panel); border:1px solid var(--line);
     border-radius:10px; padding:14px 16px; margin-bottom:14px; }
   h2 { margin:0 0 10px; font-size:14px; display:flex; justify-content:space-between;
-    align-items:center; }
-  h2 .count { color:var(--muted); font-weight:400; font-size:12px; }
+    align-items:center; gap:10px; }
+  h2 .count { color:var(--muted); font-weight:400; font-size:12px; margin-left:auto; }
+  .composer.collapsed #directive-form { display:none; }
   .session { border:1px solid var(--line); border-left-width:4px; border-radius:8px;
     padding:10px 12px; margin-bottom:9px; }
   .session.active { border-left-color:var(--green); }
   .session.stale { border-left-color:var(--red); }
-  .session.done { border-left-color:var(--gray); opacity:.78; }
+  .session.done { border-left-color:var(--gray); }
+  .session.done .sid, .session.done .task, .session.done .meta { color:var(--done-ink); }
   .s-head { display:flex; flex-wrap:wrap; gap:7px; align-items:center; }
   .dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
   .dot.active { background:var(--green); } .dot.stale { background:var(--red); }
@@ -991,9 +1005,16 @@ _DASHBOARD_HTML = r"""<!doctype html>
   .tag.branch { color:var(--blue); }
   .tag.blocked { background:color-mix(in srgb,var(--amber) 18%,var(--panel)); color:var(--amber); }
   .tag.wt { color:var(--amber); }
+  /* 指令的「待处理 / 已回复」是这一屏最该一眼看到的状态，单独给色 */
+  .tag.pending { background:color-mix(in srgb,var(--amber) 18%,var(--panel)); color:var(--amber); }
+  .tag.replied { background:color-mix(in srgb,var(--green) 15%,var(--panel)); color:var(--green); }
   .task { margin:6px 0 2px; }
   .meta { color:var(--muted); font-size:12px; }
+  /* 心跳色按真实距今时间分级：绿=刚更新，琥珀=正常，红=失活，灰=已结束。
+     原来只判断「有没有心跳」，收工的会话照样染成健康的绿色 */
   .age-ok { color:var(--green); } .age-bad { color:var(--red); }
+  .age-warn { color:var(--amber); }
+  .age-done { color:var(--done-ink); }
   .q { border:1px solid var(--line); border-radius:8px; padding:8px 11px; margin-bottom:8px; }
   .q.old { opacity:.7; }
   .wt { border:1px solid var(--line); border-radius:8px; padding:7px 10px; margin-bottom:7px; }
@@ -1006,13 +1027,20 @@ _DASHBOARD_HTML = r"""<!doctype html>
   a { color:var(--blue); }
   .empty { color:var(--muted); font-size:12.5px; }
   label.chk { display:flex; gap:6px; align-items:center; font-weight:400;
-    font-size:12px; color:var(--muted); cursor:pointer; }
+    font-size:12px; color:var(--muted); cursor:pointer; padding:4px 0; }
+  label.chk input { width:16px; height:16px; }
   footer { color:var(--muted); font-size:11.5px; padding:4px 22px 20px; }
   .btn { border:1px solid var(--line); background:var(--panel); color:var(--ink);
-    border-radius:8px; padding:7px 14px; cursor:pointer; font-size:13px; }
+    border-radius:8px; padding:9px 16px; cursor:pointer; font-size:13px; }
   .btn:hover { border-color:var(--blue); }
   .btn.primary { background:var(--blue); border-color:var(--blue); color:#fff; }
   .btn:disabled { opacity:.5; cursor:not-allowed; }
+  /* 只读状态 pill 与可点按钮外观必须区分开：用户不该靠"点一下试试"来分辨 */
+  .pill.btn { cursor:pointer; border:1px solid var(--blue); color:var(--blue);
+    background:transparent; }
+  .pill.btn:hover { background:color-mix(in srgb,var(--blue) 10%,transparent); }
+  /* 倒计时每秒改文本宽度，会让整行持续抖动 —— 等宽数字 + 固定宽度稳住 */
+  #countdown { min-width:78px; text-align:center; font-variant-numeric:tabular-nums; }
   .composer textarea, .composer select, .composer input {
     width:100%; margin:6px 0; padding:8px 10px; border:1px solid var(--line);
     border-radius:8px; background:var(--bg); color:var(--ink); font-size:13px;
@@ -1026,8 +1054,16 @@ _DASHBOARD_HTML = r"""<!doctype html>
   .reply-box { background:var(--chip); border-radius:8px; padding:7px 10px;
     margin-top:6px; white-space:pre-wrap; }
   .reply-box.pending { color:var(--muted); font-style:italic; }
-  .mini { font-size:11.5px; padding:2px 8px; border-radius:6px; cursor:pointer;
-    border:1px solid var(--line); background:var(--panel); color:var(--muted); }
+  .mini { font-size:11.5px; padding:6px 12px; min-height:30px; border-radius:6px;
+    cursor:pointer; border:1px solid var(--line); background:var(--panel);
+    color:var(--muted); }
+  .mini:hover { border-color:var(--blue); color:var(--blue); }
+  /* 触摸目标：视觉尺寸不变，用 padding 把命中区撑到接近 44px */
+  @media (pointer:coarse) {
+    .mini { min-height:40px; padding:9px 14px; }
+    .btn { min-height:44px; }
+    label.chk { padding:8px 0; }
+  }
 </style>
 </head>
 <body>
@@ -1042,19 +1078,29 @@ _DASHBOARD_HTML = r"""<!doctype html>
     <button class="pill btn" id="notify-btn" type="button">🔔 开启回复通知</button>
   </div>
 </header>
-<div class="wrap">
+<main class="wrap" id="main">
   <div id="banner"></div>
-  <section class="composer" id="directive-box">
-    <h2>给 agent 下指令 <span class="count" id="directive-hint"></span></h2>
+  <!-- 下指令是低频动作，监控是高频动作 —— 默认折起，别让它霸占首屏。
+       初始 HTML 就带 collapsed：否则首帧到 /data 返回之间会闪一次展开的表单 -->
+  <section class="composer collapsed" id="directive-box">
+    <h2>给 agent 下指令 <span class="count" id="directive-hint"></span>
+      <button class="mini" id="composer-toggle" type="button"
+        aria-expanded="false" aria-controls="directive-form">＋ 下发指令</button>
+    </h2>
     <form id="directive-form">
+      <!-- 正文放最前：原来的顺序是「选目标 → 填称呼 → 点发送 → 再写指令」，
+           先点发送只会得到一句报错 -->
+      <textarea id="directive-body" maxlength="4000" rows="3"
+        aria-label="指令正文" aria-describedby="directive-status"
+        placeholder="例：先暂停重构，优先修 main 上的登录 bug；或：跑一遍全量测试把结果告诉我"></textarea>
+      <!-- 状态/报错紧贴输入区，不再飘到 90px 之外 -->
+      <div class="meta" id="directive-status" role="status" aria-live="polite"></div>
       <div class="row">
         <select id="directive-to" aria-label="目标会话"></select>
-        <input id="directive-name" type="text" maxlength="20" placeholder="你的称呼（可选）">
+        <input id="directive-name" type="text" maxlength="20" aria-label="你的称呼（可选）" placeholder="你的称呼（可选）">
         <button class="btn primary" id="directive-send" type="submit">发送指令</button>
       </div>
-      <textarea id="directive-body" maxlength="4000" rows="3"
-        placeholder="例：先暂停重构，优先修 main 上的登录 bug；或：跑一遍全量测试把结果告诉我"></textarea>
-      <div class="meta" id="directive-status">指令会写进 .agents/inbox/，agent 下个阶段检查点就能看到；agent 空闲时用右侧「复制提醒」唤醒它。</div>
+      <div class="meta">指令会写进 .agents/inbox/，agent 下个阶段检查点就能看到；agent 空闲时用「复制提醒」唤醒它。</div>
     </form>
   </section>
   <div class="cards" id="cards"></div>
@@ -1071,10 +1117,11 @@ _DASHBOARD_HTML = r"""<!doctype html>
       <section><h2>worklog 最近</h2><div id="worklogs"></div></section>
     </div>
   </div>
-</div>
+</main>
 <footer>看板数据只读本机文件生成；「发送指令」只向 .agents/inbox/ 写入问事板文件。
   实时模式默认仅监听 127.0.0.1；对外分享需只读模式或密码。agent 继续使用
   <code>--json</code> 与终端模式，本页面不影响其行为。</footer>
+<p class="sr-only" id="live" role="status" aria-live="polite"></p>
 <script id="board-data" type="application/json">__DATA__</script>
 <script>
 "use strict";
@@ -1099,8 +1146,12 @@ function statCards(d, n) {
   const active = d.sessions.filter(s => !s.closed && !s.stale).length;
   const staleNow = d.sessions.filter(s => s.stale && s.fresh).length;
   const done = d.sessions.filter(s => s.closed).length;
+  /* 颜色必须跟着数值走：0 个活跃不该是绿色（"没人干活"至少不是件绿色的好事），
+     原来 ["活跃", active, "green"] 把颜色写死，颜色在替用户做错误判断 ——
+     这跟本套件主打的「判活三信号交叉验证」正好自相矛盾 */
   const cards = [
-    ["活跃", active, "green"], ["失活", staleNow, staleNow ? "red" : "gray"],
+    ["活跃", active, active ? "green" : "gray"],
+    ["失活", staleNow, staleNow ? "red" : "gray"],
     ["已结束", done, "gray"], ["未答问题", d.inbox_open.length,
       d.inbox_open.length ? "amber" : "gray"],
     ["worktree", d.worktrees.length, ""],
@@ -1114,6 +1165,17 @@ function statCards(d, n) {
     box.appendChild(card);
   }
   n.cards.replaceWith(box); box.id = "cards";
+  return { active, staleNow, done };
+}
+
+/* 心跳色按真实距今时间分级：绿=刚更新、常规=正常、琥珀=偏久、红=失活、
+   灰=已结束。原来只判断「有没有心跳 / 是否失活」，收工的会话照样是健康的绿色 */
+function ageClass(s) {
+  if (s.closed) return "age-done";
+  if (!s.heartbeat || s.stale) return "age-bad";
+  const m = s.age_min || 0;
+  if (m <= 2) return "age-ok";
+  return m <= 10 ? "" : "age-warn";
 }
 
 function sessionNode(s) {
@@ -1128,13 +1190,13 @@ function sessionNode(s) {
   if (s.worktree) head.appendChild(el("span", "tag wt", "wt: " + s.worktree));
   node.appendChild(head);
   if (s.task) node.appendChild(el("div", "task", s.task));
-  const ageCls = (!s.heartbeat || s.stale) ? "age-bad" : "age-ok";
   const meta = el("div", "meta");
   meta.appendChild(el("span", "", "状态 " + s.status + "　·　心跳 "));
-  meta.appendChild(el("span", ageCls, ageText(s)));
+  meta.appendChild(el("span", ageClass(s), ageText(s)));
   if (s.pr && /^https?:\/\//.test(s.pr)) {
     const a = el("a", "", "PR ↗"); a.href = s.pr; a.target = "_blank";
-    a.rel = "noopener"; meta.appendChild(el("span", "", "　·　")); meta.appendChild(a);
+    a.rel = "noopener"; a.dataset.fkey = "pr:" + s.id;
+    meta.appendChild(el("span", "", "　·　")); meta.appendChild(a);
   }
   node.appendChild(meta);
   return node;
@@ -1161,11 +1223,14 @@ function directiveNode(q) {
   const head = el("div", "s-head");
   head.appendChild(el("span", "tag", human ? "🧑 人类" : q["from"]));
   head.appendChild(el("span", "tag", "→ " + q.to));
-  head.appendChild(el("span", "tag", q.open ? "待处理" : "已回复"));
+  /* 「回没回」是这张卡最该一眼看到的信息，单独给色（原来和普通标签同色） */
+  head.appendChild(el("span", "tag " + (q.open ? "pending" : "replied"),
+    q.open ? "待处理" : "已回复"));
   head.appendChild(el("span", "tag sid", q.file));
   head.appendChild(el("span", "tag", q.date || ""));
   const copyBtn = el("button", "mini", "复制提醒");
   copyBtn.type = "button";
+  copyBtn.dataset.fkey = "remind:" + q.file;
   copyBtn.addEventListener("click", () => copyText(reminderText(q), copyBtn));
   head.appendChild(copyBtn);
   node.appendChild(head);
@@ -1196,32 +1261,76 @@ function fillTargets(d) {
   if (prev) sel.value = prev;
 }
 
+/* 下指令是低频动作，监控是高频动作：默认折起，别让 216px 的表单霸占首屏 */
+let composerOpen = false;
+
+function applyComposerState() {
+  const box = document.getElementById("directive-box");
+  const btn = document.getElementById("composer-toggle");
+  box.classList.toggle("collapsed", !composerOpen);
+  if (btn) {
+    btn.setAttribute("aria-expanded", composerOpen ? "true" : "false");
+    btn.textContent = composerOpen ? "收起" : "＋ 下发指令";
+  }
+}
+
+function setComposerOpen(open) {
+  composerOpen = open;
+  applyComposerState();
+  if (open) {
+    const ta = document.getElementById("directive-body");
+    if (ta && !ta.disabled) ta.focus();
+  }
+}
+
 function renderComposer(d) {
   const box = document.getElementById("directive-box");
+  const toggle = document.getElementById("composer-toggle");
+  const form = document.getElementById("directive-form");
   if (!LIVE) {
+    /* 快照模式：不再留一张灰掉的假表单，直接换成一句可照做的说明 */
     box.style.display = "";
-    document.getElementById("directive-hint").textContent = "快照不能发送";
-    document.getElementById("directive-form").style.opacity = ".55";
-    document.getElementById("directive-send").disabled = true;
-    document.getElementById("directive-body").disabled = true;
-    document.getElementById("directive-to").disabled = true;
+    box.classList.remove("collapsed");
+    if (toggle) toggle.style.display = "none";
+    form.style.display = "none";
+    document.getElementById("directive-hint").textContent = "快照模式";
     document.getElementById("directive-status").textContent =
-      "这是单文件快照：发送指令请运行 python tools/agents_status.py --web";
+      "这是单文件快照，不能发送指令。要下指令请在本机运行：python tools/agents_status.py --web";
     return;
   }
   fillTargets(d);
   if (d.directives_enabled) {
     box.style.display = "";
-    document.getElementById("directive-form").style.opacity = "";
+    form.style.display = "";
+    if (toggle) toggle.style.display = "";
     document.getElementById("directive-send").disabled = false;
     document.getElementById("directive-body").disabled = false;
     document.getElementById("directive-to").disabled = false;
+    applyComposerState();
   } else {
     box.style.display = "none";
   }
 }
 
+/* 每次刷新都会 replaceChildren 重建容器，落在里面的焦点会被整体抹掉 ——
+   键盘/读屏用户每 5 秒被弹回页面根部，实际等于不可用。刷新前记住焦点元素
+   的稳定键（data-fkey），刷新后找回同一个元素把焦点还回去。 */
+function focusKeyOf(node) {
+  if (!node || node === document.body || !node.closest) return null;
+  const hit = node.closest("[data-fkey]");
+  return hit ? hit.dataset.fkey : null;
+}
+function restoreFocus(key) {
+  if (!key) return;
+  const sel = (window.CSS && CSS.escape) ? CSS.escape(key) : key;
+  const next = document.querySelector('[data-fkey="' + sel + '"]');
+  if (next && typeof next.focus === "function") next.focus();
+}
+
+let lastSummary = "";
+
 function render(d) {
+  const keepFocus = focusKeyOf(document.activeElement);
   document.getElementById("root").textContent = d.root +
     "（" + d.n_roots + " 个工作区的 .agents/）";
   document.getElementById("updated").textContent = "更新 " + shortTime(d.now);
@@ -1245,7 +1354,7 @@ function render(d) {
   }
   document.getElementById("banner").replaceChildren(banner);
 
-  statCards(d, { cards: document.getElementById("cards") });
+  const counts = statCards(d, { cards: document.getElementById("cards") });
   document.getElementById("s-count").textContent = d.sessions.length + " 个";
   const sw = el("div");
   d.sessions.forEach(s => sw.appendChild(sessionNode(s)));
@@ -1291,6 +1400,8 @@ function render(d) {
   }
   document.getElementById("prs").replaceChildren(pw);
   document.getElementById("pr-toggle").style.display = LIVE ? "" : "none";
+  /* 快照模式没有事件监听，留着按钮就是「点了没反应」的死控件 */
+  document.getElementById("notify-btn").style.display = LIVE ? "" : "none";
 
   const lw = el("div");
   d.worklogs.slice(0, 3).forEach(lg => {
@@ -1307,7 +1418,16 @@ function render(d) {
       " 个超 24 小时的失活会话（只提示，不卡门禁）");
     document.getElementById("sessions").appendChild(hint);
   }
+  /* 只在数量真的变化时播报一句，避免每 5 秒刷屏 */
+  const summary = "活跃 " + counts.active + "，失活 " + counts.staleNow +
+    "，已结束 " + counts.done + "，未答问题 " + d.inbox_open.length;
+  if (summary !== lastSummary) {
+    lastSummary = summary;
+    const lv = document.getElementById("live");
+    if (lv) lv.textContent = summary;
+  }
   renderComposer(d);
+  restoreFocus(keepFocus);
   notifyAnswered(d);
 }
 
@@ -1355,6 +1475,12 @@ function setStatus(txt, bad) {
   const s = document.getElementById("directive-status");
   s.textContent = txt;
   s.style.color = bad ? "var(--red)" : "";
+  /* 报错要让读屏也能听到，并把输入框标记为无效 */
+  const ta = document.getElementById("directive-body");
+  if (ta) {
+    if (bad) ta.setAttribute("aria-invalid", "true");
+    else ta.removeAttribute("aria-invalid");
+  }
 }
 
 async function sendDirective(ev) {
@@ -1419,6 +1545,10 @@ if (LIVE) {
     wantPrs = this.checked; tick();
   });
   document.getElementById("directive-form").addEventListener("submit", sendDirective);
+  document.getElementById("composer-toggle").addEventListener("click", function () {
+    const collapsed = document.getElementById("directive-box").classList.contains("collapsed");
+    setComposerOpen(collapsed);
+  });
   document.getElementById("notify-btn").addEventListener("click", function () {
     if (!("Notification" in window)) { this.textContent = "浏览器不支持通知"; return; }
     if (Notification.permission === "granted") {

@@ -25,14 +25,23 @@
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
   renderer.setClearColor(0x000000, 0);
 
-  var PLATFORMS = [
-    { name: 'Claude Code', color: 0xFF6B35 },
-    { name: 'Codex CLI', color: 0x10A37F },
-    { name: 'OpenCode', color: 0x35D9FF },
-    { name: 'Pi', color: 0xA78BFF },
-    { name: 'Trae IDE', color: 0x4E8FFF },
-    { name: 'WorkBuddy', color: 0xC6FF4A }
-  ];
+  /* 颜色唯一来源是 style.css 的自定义属性（hero.js 读同一组）。
+     原来这里写死一套、hero.js 写死另一套，同一个平台在两处颜色全不一样，
+     而 CSS 里那 6 个 --c-* 变量从来没人引用。 */
+  function cssVar(name, fallback) {
+    var v = '';
+    try { v = getComputedStyle(document.documentElement).getPropertyValue(name).trim(); } catch (e) { /* 忽略 */ }
+    return v || fallback;
+  }
+  var PLATFORM_NAMES = ['Claude Code', 'Codex CLI', 'OpenCode', 'Pi', 'Trae IDE', 'WorkBuddy'];
+  var PLATFORM_KEYS = ['--c-cld', '--c-cdx', '--c-opc', '--c-pi0', '--c-tr4', '--c-wb0'];
+  var PLATFORM_FALLBACK = ['#FF8A50', '#37D67A', '#53C8FF', '#B79CFF', '#6E9BFF', '#D9F24A'];
+  var PLATFORMS = PLATFORM_KEYS.map(function (key, i) {
+    return { name: PLATFORM_NAMES[i], color: cssVar(key, PLATFORM_FALLBACK[i]) };
+  });
+  var AMBER = cssVar('--am', '#FFB84D');
+  var CYAN = cssVar('--cy', '#46E0FF');
+  var SURFACE = cssVar('--panel-solid', '#0A1119');
 
   /* 场景尺度：横向椭圆环，让构图在宽屏下也铺得开 */
   var RING_RX = 220, RING_RZ = 115, NODE_Y = 36;
@@ -71,13 +80,12 @@
 
   /* ── HTML 标签层 ─────────────────────────────────────────── */
   var LABELS = [];
-  function makeLabel(text, sub, colorHex, kind, gap) {
+  function makeLabel(text, sub, colorCss, kind, gap) {
     var el = document.createElement('div');
     el.className = 'topo-label' + (kind ? ' is-' + kind : '');
     var dot = document.createElement('i');
-    var col = '#' + ('000000' + colorHex.toString(16)).slice(-6);
-    dot.style.background = col;
-    dot.style.boxShadow = '0 0 10px ' + col;
+    dot.style.background = colorCss;
+    dot.style.boxShadow = '0 0 10px ' + colorCss;
     el.appendChild(dot);
     el.appendChild(document.createTextNode(text));
     if (sub) {
@@ -95,21 +103,21 @@
   var center = new THREE.Group();
   center.add(new THREE.Mesh(
     new THREE.SphereGeometry(24, 48, 48),
-    new THREE.MeshBasicMaterial({ color: 0x0d1620 })
+    new THREE.MeshBasicMaterial({ color: SURFACE })
   ));
   center.add(new THREE.LineSegments(
     new THREE.WireframeGeometry(new THREE.IcosahedronGeometry(33, 1)),
-    new THREE.LineBasicMaterial({ color: 0x35D9FF, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false })
+    new THREE.LineBasicMaterial({ color: CYAN, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false })
   ));
   center.add(glowSprite(0x9be8ff, 132, 0.45));
   var bbRing = new THREE.Mesh(
     new THREE.RingGeometry(0.975, 1.0, 128),
-    new THREE.MeshBasicMaterial({ color: 0x35D9FF, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })
+    new THREE.MeshBasicMaterial({ color: CYAN, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })
   );
   bbRing.scale.set(46, 46, 1);
   center.add(bbRing);
   root.add(center);
-  makeLabel('共享黑板 .agents/', '谁在干嘛 · 心跳 · 留言', 0xFFFFFF, 'center', 30)
+  makeLabel('共享黑板 .agents/', '谁在干嘛 · 心跳 · 留言', '#ffffff', 'center', 30)
     .pos.set(0, -58, 0);
 
   /* ── 平台节点 + 人类节点 + 管道 + 数据包 ─────────────────── */
@@ -170,13 +178,13 @@
   human.position.copy(HUMAN_POS);
   human.add(new THREE.Mesh(
     new THREE.SphereGeometry(11, 32, 32),
-    new THREE.MeshBasicMaterial({ color: 0xFFB020 })
+    new THREE.MeshBasicMaterial({ color: AMBER })
   ));
-  human.add(glowSprite(0xFFB020, 62, 0.65));
+  human.add(glowSprite(AMBER, 62, 0.65));
   root.add(human);
-  makeLabel('你 · 人类指令', '优先级最高', 0xFFB020, 'human', 30)
+  makeLabel('你 · 人类指令', '优先级最高', AMBER, 'human', 30)
     .pos.set(HUMAN_POS.x, HUMAN_POS.y + 28, HUMAN_POS.z);
-  addTube(HUMAN_POS, new THREE.Vector3(0, 84, -16), new THREE.Vector3(0, 0, 0), 0xFFB020, 0.22);
+  addTube(HUMAN_POS, new THREE.Vector3(0, 84, -16), new THREE.Vector3(0, 0, 0), AMBER, 0.22);
 
   /* ── 取景：按舞台宽高比自适应，图形始终铺满 ─────────────── */
   var SCENE_HALF_H = 136, SCENE_HALF_W = 258, FIT_MARGIN = 1.03;
