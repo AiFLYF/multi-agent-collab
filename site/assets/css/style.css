@@ -38,6 +38,7 @@
   --ease:cubic-bezier(.22,.8,.28,1);
   --dur:.28s;
   --pre-dur:900ms;         /* 幕布进度动画时长；与 ui.js 的 PRELOAD_MIN 保持一致 */
+  --acc:var(--cy);         /* 当前章节强调色，由 ui.js 随滚动写入（取自各 section 的 data-acc） */
   --head-h:62px;
 }
 
@@ -58,6 +59,9 @@ button{font-family:var(--mono);color:inherit}
 .wrap{max-width:1180px;margin:0 auto;padding:0 28px;position:relative;z-index:2}
 .mono{font-family:var(--mono)}
 code{font-family:var(--mono);font-size:.9em;color:var(--cy);background:rgba(70,224,255,.06);padding:.08em .4em;border:1px solid var(--line)}
+/* 代码块里的 <code> 是块级容器，不该继承上面那套「行内代码」的
+   青字 + 底色 + 边框（会渲染成嵌套青框，字号还被 0.9em 缩掉一成） */
+.code pre code{background:none;border:none;padding:0;color:inherit;font-size:inherit}
 
 /* 可访问性：只用键盘时的统一焦点环 */
 :focus-visible{outline:2px solid var(--cy);outline-offset:3px;border-radius:2px}
@@ -83,7 +87,7 @@ body::after{
 .grain{position:fixed;inset:0;z-index:61;pointer-events:none;opacity:.05;mix-blend-mode:overlay;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E")}
 #progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:70}
-#progress i{display:block;height:100%;transform-origin:0 50%;transform:scaleX(0);background:linear-gradient(90deg,var(--cy),var(--am))}
+#progress i{display:block;height:100%;transform-origin:0 50%;transform:scaleX(0);background:linear-gradient(90deg,var(--cy),var(--acc));transition:background .4s linear}
 
 /* 幕布期间锁滚动，避免读者在幕后翻页 */
 html.js body.is-booting{overflow:hidden}
@@ -200,8 +204,8 @@ body.is-loaded .pre-dots i{animation:none;background:var(--cy);box-shadow:0 0 12
 .site-nav{display:flex;gap:3px;margin-left:auto;font-size:10.5px;letter-spacing:.14em;color:var(--tx2)}
 .site-nav a{display:flex;gap:7px;align-items:baseline;padding:6px 11px;border:1px solid transparent;transition:.25s}
 .site-nav a i{font-style:normal;font-size:9px;color:var(--tx3)}
-.site-nav a:hover,.site-nav a.on{color:var(--cy);border-color:var(--line);background:rgba(70,224,255,.05)}
-.site-nav a.on i{color:var(--cy)}
+.site-nav a:hover,.site-nav a.on{color:var(--acc);border-color:var(--line);background:rgba(70,224,255,.05)}
+.site-nav a.on i{color:var(--acc)}
 .head-meta{margin-left:14px;display:flex;align-items:center;gap:10px;font-size:10px;letter-spacing:.16em;color:var(--tx3);white-space:nowrap}
 .live-dot{width:6px;height:6px;border-radius:50%;background:var(--cy);box-shadow:0 0 10px rgba(70,224,255,.9);animation:blink 2.4s infinite;flex:none}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
@@ -226,14 +230,14 @@ body.is-loaded .pre-dots i{animation:none;background:var(--cy);box-shadow:0 0 12
 .side-index .si-num{font-family:var(--mono);font-size:9px;color:var(--tx3);transition:color .25s}
 .side-index .si-label{font-family:var(--mono);font-size:9px;letter-spacing:.12em;color:var(--tx3);opacity:0;transform:translateX(6px);transition:.3s var(--ease)}
 .side-index button::before{content:'';width:12px;height:1px;background:var(--tx3);transition:.3s var(--ease)}
-.side-index button.on .si-num,.side-index button.on .si-label{color:var(--cy);opacity:1;transform:none}
-.side-index button.on::before{width:20px;background:var(--cy);box-shadow:0 0 6px rgba(70,224,255,.6)}
+.side-index button.on .si-num,.side-index button.on .si-label{color:var(--acc);opacity:1;transform:none}
+.side-index button.on::before{width:20px;background:var(--acc);box-shadow:0 0 8px var(--acc)}
 .side-index button:hover .si-label{opacity:1;transform:none}
 
 /* ── 章节 ─────────────────────────────────────────────────── */
 .sec{padding:var(--s12) 0;position:relative}
 .sec-head{display:flex;align-items:baseline;gap:12px;font-size:11px;letter-spacing:.22em;color:var(--tx2);margin-bottom:var(--s8)}
-.sec-head .code{color:var(--cy);font-weight:600;letter-spacing:.12em}
+.sec-head .code{color:var(--acc);font-weight:600;letter-spacing:.12em;transition:color .4s linear}
 .sec-head .en{color:var(--tx3)}
 .sec-head .cn{font-family:var(--sans);font-size:12.5px;letter-spacing:.16em;color:var(--tx);display:inline-flex;align-items:baseline;gap:12px}
 .sec-head .cn::before{content:'·';color:var(--tx3);letter-spacing:0}
@@ -300,13 +304,16 @@ body.is-loaded .hero-title .ht-line{transform:none}
 .bc-title b{color:var(--cy);font-weight:600}
 .bc-live{display:inline-flex;align-items:center;gap:8px;font-size:10px;letter-spacing:.18em;color:var(--cy)}
 .bc-rows{list-style:none}
-.bc-row{display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid var(--line);transition:background .45s var(--ease)}
+/* 三块板各给一个身份色（与第 05 章拓扑图的图例呼应） */
+.bc-row{--slot:var(--cy);display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid var(--line);transition:background .45s var(--ease)}
+.bc-row[data-slot="worklog"]{--slot:#A78BFF}
+.bc-row[data-slot="inbox"]{--slot:var(--am)}
 .bc-row:hover{background:rgba(70,224,255,.045)}
-.bc-row::before{content:'';width:3px;height:20px;flex:none;background:var(--cy);opacity:.45;transition:opacity .45s,box-shadow .45s}
-.bc-row:hover::before{opacity:.75}
+.bc-row::before{content:'';width:3px;height:20px;flex:none;background:var(--slot);opacity:.5;transition:opacity .45s,box-shadow .45s}
+.bc-row:hover::before{opacity:.8}
 .bc-row.flash{background:rgba(70,224,255,.09)}
-.bc-row.flash::before{opacity:1;box-shadow:0 0 12px rgba(70,224,255,.9)}
-.bc-k{font-size:11.5px;color:var(--cy);letter-spacing:.04em;min-width:88px}
+.bc-row.flash::before{opacity:1;box-shadow:0 0 12px var(--slot)}
+.bc-k{font-size:11.5px;color:var(--slot);letter-spacing:.04em;min-width:88px}
 .bc-v{font-size:11.5px;color:var(--tx3);letter-spacing:.03em}
 .bc-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:13px 18px;font-size:10px;letter-spacing:.14em;color:var(--tx3)}
 .bc-conv{display:inline-flex;align-items:center;gap:10px}
@@ -360,7 +367,9 @@ body.is-loaded .hero-title .ht-line{transform:none}
 .inc-head,.inc-row{display:grid;grid-template-columns:1fr 56px 1fr}
 .inc-head{font-size:10.5px;letter-spacing:.16em;color:var(--tx3);border-bottom:1px solid var(--line)}
 .inc-head span{padding:13px 20px}
-.inc-row{border-bottom:1px solid var(--line);font-size:14px}
+.inc-row{border-bottom:1px solid var(--line);font-size:14px;transition:background .25s}
+.inc-row:hover{background:rgba(70,224,255,.028)}
+.inc-row:hover .inc-rule{background:rgba(70,224,255,.06)}
 .inc-row:last-child{border-bottom:none}
 .inc-sym{padding:18px 20px;color:var(--tx3)}
 .inc-arrow{display:flex;align-items:center;justify-content:center;color:var(--am);border-left:1px solid var(--line);border-right:1px solid var(--line);font-size:14px}
@@ -399,7 +408,8 @@ body.is-loaded .hero-title .ht-line{transform:none}
 .board-list li{display:flex;gap:14px;font-size:14.5px;color:var(--tx2);text-wrap:pretty}
 .board-list li:last-child{grid-column:1 / -1}
 .board-list b{color:var(--tx)}
-.bl-i{flex:none;width:32px;height:32px;border:1px solid var(--line2);background:rgba(70,224,255,.05);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;color:var(--cy)}
+.bl-i{flex:none;width:32px;height:32px;border:1px solid var(--line2);background:rgba(70,224,255,.05);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;color:var(--cy);transition:border-color .3s,color .3s,background .3s}
+.board-list li:hover .bl-i{border-color:var(--acc);color:var(--acc);background:rgba(70,224,255,.09)}
 
 .board-figure{margin:var(--s8) 0 0;border:1px solid var(--line2);border-top-color:var(--line-top);background:var(--panel-solid);box-shadow:0 30px 80px rgba(0,0,0,.5);overflow:hidden}
 .bf-bar{display:flex;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid var(--line);background:rgba(9,15,24,.5)}
@@ -462,7 +472,7 @@ body.lb-open{overflow:hidden}
 .checks .ac-title{font-size:10.5px;letter-spacing:.16em;color:var(--tx3);margin-bottom:12px}
 .checks ol{padding-left:20px;display:flex;flex-direction:column;gap:10px;font-size:14px;color:var(--tx2)}
 .checks b{color:var(--cy);font-weight:500}
-.code{border:1px solid var(--line);background:#070C12;margin:14px 0}
+.code{border:1px solid var(--line);border-top-color:var(--line-top);background:#070C12;margin:14px 0}
 .code-bar{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:10px;color:var(--tx3);letter-spacing:.1em}
 .code-bar i{width:8px;height:8px;border-radius:50%;flex:none}
 .code-bar i:nth-child(1){background:var(--rd)}.code-bar i:nth-child(2){background:var(--am)}.code-bar i:nth-child(3){background:var(--cy)}
@@ -474,15 +484,17 @@ body.lb-open{overflow:hidden}
 .code .c{color:var(--tx3)}.code .p{color:var(--cy)}.code .s{color:#8FE3A8}.code .m{color:var(--am)}
 .cmd-table{width:100%;border-collapse:collapse;font-size:14px}
 .cmd-table th{font-family:var(--mono);font-size:10px;letter-spacing:.16em;color:var(--tx3);text-align:left;padding:10px 14px;border-bottom:1px solid var(--line)}
-.cmd-table td{padding:11px 14px;border-bottom:1px solid var(--line);color:var(--tx2);vertical-align:top}
+.cmd-table td{padding:11px 14px;border-bottom:1px solid var(--line);color:var(--tx2);vertical-align:top;transition:background .2s}
+.cmd-table tbody tr:hover td{background:rgba(70,224,255,.035)}
 .cmd-table tr:last-child td{border-bottom:none}
-.cmd-table td.cmd{font-family:var(--mono);font-size:12.5px;color:var(--tx);white-space:nowrap;cursor:copy;transition:color .2s,background .2s}
-.cmd-table td.cmd:hover{color:var(--cy);background:rgba(70,224,255,.04)}
+.cmd-table td.cmd{font-family:var(--mono);font-size:12.5px;color:var(--tx);white-space:nowrap;cursor:copy;transition:color .2s}
+.cmd-table td.cmd:hover{color:var(--acc)}
 .cmd-table td.cmd::after{content:'⧉';margin-left:10px;color:var(--tx3);font-size:11px}
 .cmd-table td.cmd.copied{color:var(--cy)}
 .cmd-table td.cmd.copied::after{content:'✓ 已复制'}
 .bounds{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:var(--s7)}
-.bound{border:1px solid var(--line);border-top-color:var(--line-top);padding:22px 24px;background:var(--panel)}
+.bound{border:1px solid var(--line);border-top-color:var(--line-top);padding:22px 24px;background:var(--panel);transition:border-color .3s var(--ease)}
+.bound:hover{border-color:var(--line2)}
 .bound h4{font-family:var(--mono);font-size:11px;letter-spacing:.16em;margin-bottom:14px}
 .bound.fit h4{color:var(--cy)}.bound.think h4{color:var(--am)}
 .bound ul{list-style:none;display:flex;flex-direction:column;gap:9px;font-size:13.5px;color:var(--tx2)}
@@ -550,8 +562,10 @@ body.from-file .file-note{display:block}
   .strip{gap:var(--s2) 0;margin-top:var(--s9)}
   .strip span{padding:11px 14px;font-size:9.5px;letter-spacing:.08em}
   .strip b{font-size:13px}
-  .stat-grid{grid-template-columns:1fr;gap:14px;margin:var(--s8) 0 var(--s1)}
-  .stat{padding:22px 20px}
+  .stat-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:var(--s8) 0 var(--s1)}
+  .stat{padding:18px 16px;gap:10px}
+  .stat b{font-size:clamp(24px,6.6vw,30px)}
+  .stat-cap{font-size:11.5px;line-height:1.55}
   .statement{margin-bottom:var(--s5)}
   .lede{font-size:14px}
   .cards-3{margin:var(--s8) 0 var(--s9);gap:14px}
@@ -582,9 +596,13 @@ body.from-file .file-note{display:block}
   .topo-label u{display:none}
   .topo-cap{font-size:9.5px;gap:8px;padding:12px 16px}
   .tabs{margin-top:var(--s8)}
-  .tab-bar{flex-wrap:wrap}
-  .tab{flex:1 1 100%;border-bottom:1px solid var(--line);padding:13px 14px;text-align:left}
-  .tab.is-on{border-bottom-color:var(--cy)}
+  /* 三个标签横排要 458px，390px 屏只有 348px 可用 —— 横排要么挤成 8px 字，
+     要么被裁掉第三个。改成带左侧色条的选项列表：照样一眼看出选中哪个。 */
+  .tab-bar{flex-direction:column}
+  .tab{flex:none;width:100%;text-align:left;padding:14px 16px;font-size:11px;letter-spacing:.06em;border-bottom:1px solid var(--line);border-left:2px solid transparent}
+  .tab:last-child{border-bottom:none}
+  .tab.is-on{border-bottom-color:var(--line);border-left-color:var(--acc);background:rgba(70,224,255,.05);color:var(--acc)}
+  .tab.is-on i{color:var(--acc)}
   .code pre{font-size:12px;padding:14px 16px}
   .cmd-table{font-size:12.5px}
   .cmd-table td.cmd{white-space:normal;font-size:11.5px}
@@ -614,6 +632,7 @@ body.from-file .file-note{display:block}
   .bc-k{min-width:74px;font-size:11px}
   .bc-v{font-size:11px}
   .strip span{padding:10px 12px}
+  .stat-grid{grid-template-columns:1fr}
 }
 
 /* 矮屏（横放手机 / 小笔记本）：hero 别强占满屏 */
