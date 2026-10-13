@@ -138,13 +138,25 @@
       scrollToSection(parseInt(btn.getAttribute('data-target'), 10));
     });
   });
+  /* 每章一个强调色（section 上的 data-acc / data-sec）：
+     滚到哪一章，顶栏高亮、侧索引、进度条末端与章节编号就换成那一章的颜色，
+     给读者一个「你在哪儿」的持续线索。 */
+  var curAccent = '';
   function syncActiveNav() {
     var y = window.scrollY + window.innerHeight * 0.38;
     var cur = 0;
     sections.forEach(function (s, i) { if (s.offsetTop <= y) cur = i; });
+    var active = sections[cur];
+    var idx = active ? parseInt(active.getAttribute('data-sec'), 10) : 0;
+    if (isNaN(idx)) idx = cur;
     $$('.site-nav a, .side-index button').forEach(function (a) {
-      a.classList.toggle('on', parseInt(a.getAttribute('data-target'), 10) === cur);
+      a.classList.toggle('on', parseInt(a.getAttribute('data-target'), 10) === idx);
     });
+    var acc = active && active.getAttribute('data-acc');
+    if (acc && acc !== curAccent) {
+      curAccent = acc;
+      root.style.setProperty('--acc', acc);
+    }
   }
   window.addEventListener('scroll', syncActiveNav, { passive: true });
   syncActiveNav();
