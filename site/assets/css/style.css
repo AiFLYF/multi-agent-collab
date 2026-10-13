@@ -151,7 +151,7 @@ body.is-loaded #preloader .pre-mid{transform:translateY(-10px)}
 
 .pre-top{display:flex;justify-content:space-between;align-items:flex-start;gap:var(--s3);font-size:11px;letter-spacing:.2em;color:var(--tx3);position:relative;z-index:1}
 .pre-brand{display:inline-flex;align-items:center;gap:10px;min-width:0}
-.pre-brand svg{width:16px;height:16px;flex:none;stroke:var(--cy);fill:none;stroke-width:1.8;animation:preSpin 9s linear infinite}
+.pre-brand svg{width:16px;height:16px;flex:none;animation:preSpin 9s linear infinite}
 @keyframes preSpin{to{transform:rotate(360deg)}}
 .pre-ver{color:var(--tx3);white-space:nowrap}
 
@@ -198,9 +198,10 @@ body.is-loaded .pre-dots i{animation:none;background:var(--cy);box-shadow:0 0 12
 .site-head.solid{background:rgba(5,7,12,.82);backdrop-filter:blur(14px) saturate(130%);-webkit-backdrop-filter:blur(14px) saturate(130%);border-bottom-color:var(--line)}
 .brand{display:flex;align-items:center;gap:12px;flex:none;min-width:0}
 .brand svg{width:20px;height:20px;flex:none;transition:transform .5s var(--ease)}
-/* 品牌标记 = logo 的简化版（六条连线 + 六边形黑板核心），与 favicon 同一形状 */
-.brand .bm-link{stroke:var(--cy);stroke-width:7.6;stroke-linecap:round;fill:none;opacity:.92}
-.brand .bm-core{fill:var(--cy);stroke:none}
+/* 品牌标记 = logo 的简化版（六条连线 + 六边形黑板核心），
+   与 favicon、预加载幕布上的那枚是同一个形状 —— 三处必须一致 */
+.bm-link{stroke:var(--cy);stroke-width:7.6;stroke-linecap:round;fill:none;opacity:.92}
+.bm-core{fill:var(--cy);stroke:none}
 .brand:hover svg{transform:rotate(90deg)}
 .brand b{font-family:var(--sans);font-weight:800;font-size:14.5px;letter-spacing:.02em;white-space:nowrap}
 .brand span{font-size:10px;letter-spacing:.22em;color:var(--cy-soft);border:1px solid var(--line2);padding:3px 8px;white-space:nowrap}
