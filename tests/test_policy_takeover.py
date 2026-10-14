@@ -20,7 +20,13 @@ from agents_policy import build_policy, check_task_branch, read_policy, validate
 
 class GitFixture(unittest.TestCase):
     # 复用真实 Git 环境，不继承已有测试，避免重复运行同一套用例。
-    setUp = fixtures.TestSessionCoordination.setUp
+    def setUp(self):
+        fixtures.TestSessionCoordination.setUp(self)
+        # Installation deliberately changes this shared project file; the fixture
+        # accepts it before simulating an abandoned business task.
+        self.assertEqual(run("git", "add", ".gitignore", cwd=self.root).returncode, 0)
+        self.assertEqual(run("git", "commit", "-q", "-m", "test: accept private state ignore", cwd=self.root).returncode, 0)
+
     tearDown = fixtures.TestSessionCoordination.tearDown
     install = fixtures.TestSessionCoordination.install
     command = fixtures.TestSessionCoordination.command
@@ -72,8 +78,8 @@ class TestProjectPolicy(GitFixture):
         result = run(PY, str(KIT / "install.py"), "sync", str(self.root), cwd=KIT)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(read_policy(self.root), before)
-        self.assertIn("`trunk`", (self.root / ".agents/POLICY.md").read_text(encoding="utf-8"))
-        for path in (".agents/policy.json", ".agents/POLICY.md", "tools/agents_policy.py"):
+        self.assertIn("`trunk`", (self.root / ".multi-agent-collab/POLICY.md").read_text(encoding="utf-8"))
+        for path in (".multi-agent-collab/policy.json", ".multi-agent-collab/POLICY.md", ".multi-agent-collab/tools/agents_policy.py"):
             self.assertEqual(run("git", "check-ignore", "-q", path, cwd=self.root).returncode, 0)
 
     def test_policy_controls_registration_and_check_but_allows_existing_task_cleanup(self):
@@ -95,10 +101,10 @@ class TestProjectPolicy(GitFixture):
         self.configure("--workflow", "github-flow")
         linked = self.worktree()
         self.assertEqual(read_policy(linked), read_policy(self.root))
-        before = (linked / ".agents/policy.json").read_bytes()
+        before = (linked / ".multi-agent-collab/policy.json").read_bytes()
         self.configure("--workflow", "custom", "--base-branch", "trunk", "--task-prefixes", "task/",
                        root=linked, expected=2)
-        self.assertEqual((linked / ".agents/policy.json").read_bytes(), before)
+        self.assertEqual((linked / ".multi-agent-collab/policy.json").read_bytes(), before)
         self.configure("--workflow", "custom", "--base-branch", "trunk", "--task-prefixes", "task/")
         result, data = self.start(linked, "claude")
         self.assertEqual(result.returncode, 2, data)
@@ -108,7 +114,7 @@ class TestProjectPolicy(GitFixture):
         self.assertEqual(read_policy(linked), read_policy(self.root))
 
     def test_malformed_policy_fails_before_install_or_session_writes(self):
-        path = self.root / ".agents/policy.json"
+        path = self.root / ".multi-agent-collab/policy.json"
         path.write_text("[]", encoding="utf-8")
         agents_before = (self.root / "AGENTS.md").read_bytes()
         self.configure(expected=2)
@@ -118,7 +124,7 @@ class TestProjectPolicy(GitFixture):
         self.assertIn("策略", data["error"])
 
     def test_missing_policy_keeps_legacy_git_flow_and_uninstall_preserves_policy_data(self):
-        path = self.root / ".agents/policy.json"
+        path = self.root / ".multi-agent-collab/policy.json"
         path.unlink()
         result, data = self.command(self.root, "check", "--files", "src/app.py")
         self.assertEqual(result.returncode, 0, data)
@@ -128,7 +134,7 @@ class TestProjectPolicy(GitFixture):
         result = run(PY, str(KIT / "install.py"), "uninstall", str(self.root), "--purge-files", cwd=KIT)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(path.read_bytes(), original)
-        self.assertTrue((self.root / ".agents/POLICY.md").is_file())
+        self.assertTrue((self.root / ".multi-agent-collab/POLICY.md").is_file())
 
 
 class TestClientReadiness(unittest.TestCase):
@@ -191,7 +197,7 @@ class TestTakeover(GitFixture):
     def plan(self, record):
         result, data = self.command(self.root, "takeover-plan", record["id"], "--agent", "claude", "--reason", "测试夹具原会话失联")
         self.assertEqual(result.returncode, 0, data)
-        path = self.root / ".agents/takeovers" / (data["plan"] + ".json")
+        path = self.root / ".multi-agent-collab/takeovers" / (data["plan"] + ".json")
         return data, path, json.loads(path.read_text(encoding="utf-8"))
 
     def apply(self, plan, offset=300, **overrides):
@@ -371,14 +377,14 @@ class TestTakeover(GitFixture):
         self.assertEqual(result.returncode, 1, rejected)
         self.assertIn(plan["id"], rejected["error"])
         linked = self.worktree()
-        (linked / ".agents/sessions" / path.name).write_bytes(path.read_bytes())
+        (linked / ".multi-agent-collab/sessions" / path.name).write_bytes(path.read_bytes())
         result, rejected = self.command(self.root, "takeover-inspect", record["id"])
         self.assertEqual(result.returncode, 2, rejected)
         self.assertIn("相同 ID", rejected["error"])
 
     def test_targeted_human_instruction_blocks_plan_without_fake_completion(self):
         record, _ = self.stale_session()
-        inbox = self.root / ".agents/inbox/Q-targeted.md"
+        inbox = self.root / ".multi-agent-collab/inbox/Q-targeted.md"
         inbox.write_text(f"# 暂停\n- from: human\n- to: {record['id']}\n- status: open\n\n先等我确认。\n", encoding="utf-8")
         result, rejected = self.command(self.root, "takeover-plan", record["id"], "--agent", "claude", "--reason", "测试")
         self.assertEqual(result.returncode, 1, rejected)

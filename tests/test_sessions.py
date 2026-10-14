@@ -38,7 +38,7 @@ class TestSessionCoordination(unittest.TestCase):
         return result
 
     def command(self, root: Path, *args: str):
-        result = run(PY, str(root / "tools/agents_session.py"), "--root", str(root), *args,
+        result = run(PY, str(root / ".multi-agent-collab/tools/agents_session.py"), "--root", str(root), *args,
                      "--json", cwd=root)
         return result, json.loads(result.stdout)
 
@@ -62,7 +62,7 @@ class TestSessionCoordination(unittest.TestCase):
         heartbeat, data = self.command(self.root, "heartbeat", record["id"], "--agent", "codex", "--note", "完成用例")
         self.assertEqual(heartbeat.returncode, 0, data)
         self.assertIn("必须保留这一段", path.read_text(encoding="utf-8"))
-        log = self.root / ".agents/worklog" / (__import__("datetime").datetime.now().strftime("%Y-%m-%d") + ".md")
+        log = self.root / ".multi-agent-collab/worklog" / (__import__("datetime").datetime.now().strftime("%Y-%m-%d") + ".md")
         log.write_text("# 原有记录\n不能重写。\n", encoding="utf-8")
         result, data = self.command(self.root, "finish", record["id"], "--agent", "codex",
                                     "--summary", "完成并验证", "--tests", "回归通过")
@@ -72,7 +72,7 @@ class TestSessionCoordination(unittest.TestCase):
         self.assertIn("回归通过", log.read_text(encoding="utf-8"))
         second, data = self.start(self.root)
         self.assertEqual(second.returncode, 0, data)
-        self.assertEqual(run("git", "status", "--porcelain", cwd=self.root).stdout, "",
+        self.assertEqual(run("git", "status", "--porcelain", cwd=self.root).stdout, "?? .gitignore\n",
                          "使用协作命令后不应新增 Python 缓存等未忽略文件")
 
     def test_same_workspace_is_not_claimed_twice(self) -> None:
@@ -134,12 +134,12 @@ class TestSessionCoordination(unittest.TestCase):
             tasks = [pool.submit(self.start, self.root, "codex"), pool.submit(self.start, linked, "claude")]
             results = [task.result() for task in tasks]
         self.assertEqual(sorted(r.returncode for r, _data in results), [0, 1], [d for _r, d in results])
-        count = sum(len([p for p in (root / ".agents/sessions").glob("*.md") if not p.name.startswith("_")])
+        count = sum(len([p for p in (root / ".multi-agent-collab/sessions").glob("*.md") if not p.name.startswith("_")])
                     for root in (self.root, linked))
         self.assertEqual(count, 1)
 
     def test_human_inbox_must_be_handled_before_start(self) -> None:
-        question = self.root / ".agents/inbox/Q-2026-10-14-01.md"
+        question = self.root / ".multi-agent-collab/inbox/Q-2026-10-14-01.md"
         question.write_text("# 人类指令\n- from: human\n- to: any\n- status: open\n\n请执行任务并记录实际测试结果。\n", encoding="utf-8")
         result, data = self.start(self.root)
         self.assertEqual(result.returncode, 1, data)
@@ -170,7 +170,7 @@ class TestSessionCoordination(unittest.TestCase):
     def test_resume_checks_human_instructions_addressed_to_session(self) -> None:
         _, record = self.start(self.root)
         _, handoff = self.command(self.root, "handoff", record["id"], "--agent", "codex", "--summary", "等待确认")
-        question = self.root / ".agents/inbox/Q-2026-10-14-targeted.md"
+        question = self.root / ".multi-agent-collab/inbox/Q-2026-10-14-targeted.md"
         question.write_text(f"# 待执行任务\n- from: human\n- to: {record['id']}\n- status: open\n\n请补充测试。\n", encoding="utf-8")
         result, data = self.command(self.root, "resume", record["id"], "--agent", "codex")
         self.assertEqual(result.returncode, 1, data)
@@ -186,10 +186,10 @@ class TestSessionCoordination(unittest.TestCase):
         _, handoff = self.command(self.root, "handoff", record["id"], "--agent", "codex", "--summary", "准备结束")
         path = Path(record["file"])
         original = path.read_text(encoding="utf-8")
-        human = self.root / ".agents/inbox/Q-2026-10-14-handoff-other.md"
+        human = self.root / ".multi-agent-collab/inbox/Q-2026-10-14-handoff-other.md"
         human.write_text("# 人类问题\n- from: human\n- to: any\n- status: open\n", encoding="utf-8")
         before = human.read_bytes()
-        path.write_text(original.replace(handoff["inbox"], ".agents/inbox/" + human.name), encoding="utf-8")
+        path.write_text(original.replace(handoff["inbox"], ".multi-agent-collab/inbox/" + human.name), encoding="utf-8")
         rejected, data = self.command(self.root, "finish", record["id"], "--agent", "codex", "--summary", "结束", "--tests", "测试场景")
         self.assertEqual(rejected.returncode, 2, data)
         self.assertEqual(human.read_bytes(), before)
@@ -213,7 +213,7 @@ class TestSessionCoordination(unittest.TestCase):
         path = Path(record["file"])
         second = path.with_name("claude-261014-1000-aabb.md")
         second.write_text(path.read_text(encoding="utf-8").replace(record["id"], second.stem).replace("agent: codex", "agent: claude"), encoding="utf-8")
-        r = run(PY, str(self.root / "tools/agents_status.py"), "--json", cwd=self.root)
+        r = run(PY, str(self.root / ".multi-agent-collab/tools/agents_status.py"), "--json", cwd=self.root)
         data = json.loads(r.stdout)
         self.assertEqual(r.returncode, 1)
         self.assertTrue(any("文件占用冲突" in warning for warning in data["warnings"]))

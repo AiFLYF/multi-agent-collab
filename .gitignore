@@ -42,3 +42,6 @@ desktop.ini
 *~
 .idea/
 .vscode/
+
+# Default isolated installation directory
+.multi-agent-collab/

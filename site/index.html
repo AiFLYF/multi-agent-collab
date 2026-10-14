@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>multi-agent-collab — 一个项目，多个 AI，一套交规</title>
-<meta name="description" content="给同一项目里的多个 AI 助手立交规：一份 AGENTS.md 规则总章、一块 .agents/ 共享黑板、一个零依赖看板脚本。不互相覆盖、不重复劳动，人类指令优先级最高。Windows / macOS / Linux，Python 3.8+。">
+<meta name="description" content="给同一项目里的多个 AI 助手立交规：保留项目 AGENTS.md，接入独立协作总章、一块 .multi-agent-collab/ 共享黑板、一个零依赖看板脚本。不互相覆盖、不重复劳动，人类指令优先级最高。Windows / macOS / Linux，Python 3.8+。">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#060608">
 <link rel="canonical" href="https://aiflyf.github.io/multi-agent-collab/">
@@ -148,7 +148,7 @@
     <section class="sec hero" id="sec-0" data-sec="0" data-acc="#46E0FF">
       <canvas id="heroScene" role="img" aria-label="示例平台的 AI 信号流以各自的方式汇入中央共享黑板，人类指令以琥珀色脉冲抵达"></canvas>
 
-      <div class="hud hud-tl mono" aria-hidden="true">BOARD <b>.agents/</b> · SYNCED<br>RULEBOOK <b>AGENTS.md</b> v1.6.0</div>
+      <div class="hud hud-tl mono" aria-hidden="true">BOARD <b>.multi-agent-collab/</b> · SYNCED<br>RULEBOOK <b>AGENTS.md</b> v1.6.0</div>
       <div class="hud hud-tr mono" aria-hidden="true">TRACKS <b>06/06</b> ONLINE<br>NO-LOCK · HEARTBEAT 15M</div>
       <div class="hud hud-br mono" aria-hidden="true">CROSS-PLATFORM MULTI-AGENT · MIT<br>HEARTBEAT-NO-LOCK · PR-FIRST</div>
       <div class="console-log" id="heroLog" aria-hidden="true"></div>
@@ -181,7 +181,7 @@
 
         <div class="board-card" id="boardCard">
           <div class="bc-head mono">
-            <span class="bc-title"><b>.agents/</b> 共享黑板</span>
+            <span class="bc-title"><b>.multi-agent-collab/</b> 共享黑板</span>
             <span class="bc-live"><i class="live-dot" aria-hidden="true"></i>LIVE</span>
           </div>
           <ul class="bc-rows mono">
@@ -238,7 +238,7 @@
           <article class="pcard rv" style="--d:.08s" data-tilt>
             <span class="pcard-i mono">PILLAR 02</span>
             <h3>一块共享黑板</h3>
-            <p><code>.agents/</code> 就是本机共享记忆：谁在哪个分支干什么、心跳还活不活、有问题问谁、前任走了怎么接手。全是几个 Markdown 小文件，不进 git，切分支不丢。</p>
+            <p><code>.multi-agent-collab/</code> 就是本机共享记忆：谁在哪个分支干什么、心跳还活不活、有问题问谁、前任走了怎么接手。全是几个 Markdown 小文件，不进 git，切分支不丢。</p>
           </article>
           <article class="pcard rv" style="--d:.16s" data-tilt>
             <span class="pcard-i mono">PILLAR 03</span>
@@ -278,7 +278,7 @@
         <div class="marquee-track">
           <div class="marquee-group">
             <span>AGENTS.md 一份规则</span><i>✳</i>
-            <span>.agents/ 共享黑板</span><i>✳</i>
+            <span>.multi-agent-collab/ 共享黑板</span><i>✳</i>
             <span>心跳 15 分钟判活</span><i>✳</i>
             <span>人类指令最高优先级</span><i>✳</i>
             <span>FEATURE/* 分支铁律</span><i>✳</i>
@@ -289,7 +289,7 @@
           </div>
           <div class="marquee-group">
             <span>AGENTS.md 一份规则</span><i>✳</i>
-            <span>.agents/ 共享黑板</span><i>✳</i>
+            <span>.multi-agent-collab/ 共享黑板</span><i>✳</i>
             <span>心跳 15 分钟判活</span><i>✳</i>
             <span>人类指令最高优先级</span><i>✳</i>
             <span>FEATURE/* 分支铁律</span><i>✳</i>
@@ -392,7 +392,7 @@
           <article class="rule rv" style="--d:.18s" data-tilt>
             <span class="rule-r">RULE 04 · 数据边界</span>
             <h3>协作文件只留本机，不进 git</h3>
-            <p>写进 <code>.git/info/exclude</code>：切分支不丢、不会误提交、不污染团队仓库。代价是没有云端备份——重要节点把 <code>.agents/</code> 拷到仓库外即可。</p>
+            <p>独立目录默认写进 <code>.gitignore</code>：本机记录切分支不丢；共享入口已有的 Git 跟踪状态保持不变。代价是没有云端备份——重要节点把 <code>.multi-agent-collab/</code> 拷到仓库外即可。</p>
           </article>
         </div>
 
@@ -430,7 +430,7 @@
         </ul>
 
         <figure class="board-figure rv" style="--d:.16s">
-          <div class="bf-bar"><i></i><i></i><i></i><span class="mono">127.0.0.1:8731 · python tools/agents_status.py --web</span></div>
+          <div class="bf-bar"><i></i><i></i><i></i><span class="mono">127.0.0.1:8731 · python .multi-agent-collab/tools/agents_status.py --web</span></div>
           <button class="bf-zoom" type="button" data-zoom="assets/board.png" aria-label="放大查看看板截图">
             <img src="assets/board.png" alt="multi-agent-collab 网页看板：上方的指令下发区与统计卡、左侧的四个 AI 会话卡片、右侧的指令与回复往来（演示数据）" width="1440" height="900" loading="lazy">
             <span class="bf-zoom-tag mono">点击放大 ⤢</span>
@@ -441,13 +441,13 @@
         <div class="code rv" style="--d:.24s">
           <div class="code-bar"><i></i><i></i><i></i><span class="fname">terminal · powershell / bash</span><button class="copy" data-copy="board-cmd" data-hover>复制</button></div>
 <pre><code id="board-cmd"># 图形化指挥台
-python tools/agents_status.py --web
+python .multi-agent-collab/tools/agents_status.py --web
 
 # 单文件快照（不需要服务）
-python tools/agents_status.py --html
+python .multi-agent-collab/tools/agents_status.py --html
 
 # AI 开工协调用的一行摘要
-python tools/agents_status.py --brief
+python .multi-agent-collab/tools/agents_status.py --brief
 # 示例输出：OK 看板无告警，可直接开工</code></pre>
         </div>
       </div>
@@ -464,18 +464,18 @@ python tools/agents_status.py --brief
 
         <p class="lede rv" style="--d:.16s">
           按需安装的平台入口，最终指向同一份 <code>AGENTS.md</code> 和启动清单。
-          原生平台直接读取，Claude 通过导入，其它平台使用项目规则或镜像。
+          保留项目原规则，各平台通过简短入口读取独立协作总章。
           图中以六个会话为例：<strong>共享记录，协同工作</strong>。下方可搜索并选择受支持的平台。
         </p>
 
         <div class="topo-stage rv" style="--d:.2s">
           <div class="topo-view">
-            <canvas id="topoScene" role="img" aria-label="协作拓扑图：示例平台的会话节点汇入中央的共享黑板 .agents/，人类节点以金色线路连入"></canvas>
+            <canvas id="topoScene" role="img" aria-label="协作拓扑图：示例平台的会话节点汇入中央的共享黑板 .multi-agent-collab/，人类节点以金色线路连入"></canvas>
             <div class="topo-labels" id="topoLabels" aria-hidden="true"></div>
           </div>
           <div class="topo-cap mono">
             <span class="topo-legend">
-              <i>平台会话</i><i class="lg-bb">共享黑板 .agents/</i><i class="lg-am">你 · 人类指令</i>
+              <i>平台会话</i><i class="lg-bb">共享黑板 .multi-agent-collab/</i><i class="lg-am">你 · 人类指令</i>
             </span>
             <span>拖拽旋转 · 数据包 = 会话读规则 / 写心跳 / 读指令</span>
           </div>
@@ -540,14 +540,14 @@ python tools/agents_status.py --brief
 
 1. 检查 Python 3.8+ 和 Git，确认当前项目的 Git 根目录并记下绝对路径 TARGET。缺依赖时说明，不自行安装软件或 git init。
 2. 优先根据当前对话确认正在使用的平台并告诉我；无法确认时先问我使用哪些平台（可多选）：codex、claude、opencode、pi、trae、workbuddy、cursor、copilot、windsurf、gemini、qwen、cline、roo、continue、kiro。使用对应的 --platforms 名称；不要根据电脑里装过哪些软件就全部安装。
-   读取项目现有分支约定与 .agents/policy.json；已有策略沿用，首次安装按已确认流程选择 git-flow、github-flow 或 custom。只有 main 的项目可使用 github-flow；无法确认时只询问分支流程，不擅自建立 develop 或改变远端结构。
+   读取项目现有分支约定与 .multi-agent-collab/policy.json；已有策略沿用，首次安装按已确认流程选择 git-flow、github-flow 或 custom。只有 main 的项目可使用 github-flow；无法确认时只询问分支流程，不擅自建立 develop 或改变远端结构。
 3. 套件默认放在用户主目录的 multi-agent-collab：Windows 为 $HOME\multi-agent-collab，macOS/Linux 为 ~/multi-agent-collab。这里是可供多个项目复用的源码目录，不要 clone 到 TARGET 内。
    目录不存在时执行 git clone https://github.com/AiFLYF/multi-agent-collab "&lt;用户主目录&gt;/multi-agent-collab"。已存在时核对 origin 和 install.py 后复用；来源不符或有本地修改时保留现场并说明，不覆盖、不删除、不重置。只有确认工作区干净且配置了上游后，才用 git pull --ff-only 更新。
 4. 使用绝对路径运行 python "&lt;套件目录&gt;/install.py" install "&lt;TARGET&gt;" --platforms &lt;已选名称&gt; --dry-run；首次安装附加已确认的 --workflow 参数，自定义流程还要 --base-branch 和 --task-prefixes。核对文件清单与分支策略后执行同一条命令去掉 --dry-run；不要默认 all。只选原生平台时不生成其它平台配置。
-5. 安装器负责把本机协作路径写入 .git/info/exclude。若已有规则被 Git 跟踪或忽略无法生效，报告具体文件和原因，不自动取消跟踪、不改写项目 .gitignore、不绕过检查。
-6. 根据项目的真实配置填写生成的 AGENTS.md 第 6 节；选了 Claude 再填写 CLAUDE.md 速览。保留已有定制、会话、日志和备份。若改过总章，再运行 python "&lt;套件目录&gt;/install.py" sync "&lt;TARGET&gt;" 刷新已选入口。
+5. 新安装把套件规则、工具、记录放入 .multi-agent-collab/，默认在项目 .gitignore 的标记区忽略该目录；平台入口按精确路径写入 .git/info/exclude。已有 AGENTS.md 等共享入口保留原文，只维护小段标记。已跟踪入口的差异正常显示，不取消跟踪，不隐藏索引改动。来源不明的独立目录、损坏标记或被修改的套件文件先报告并保留现场。
+6. 结合项目真实配置填写 .multi-agent-collab/RULES.md 第 6 节缺少的测试/构建命令，项目既有测试要求和已确认策略继续有效。保留已有规则、会话、日志和备份。旧版安装沿用 .agents/ 路径，不自动搬迁；新增平台使用 sync。
 7. 执行 python "&lt;套件目录&gt;/install.py" doctor "&lt;TARGET&gt;"，并核对 git status --short；可用 clients "&lt;TARGET&gt;" --versions 检查 CLI 可用性，不启动模型。汇报套件复用路径、已选平台、项目分支策略、生成文件和体检结果；解释 WARN，版本查询不代表新对话已加载规则。
-8. 告诉我新开对话验证：让 agent 读取 .agents/START_HERE.md，报告当前分支、看板和 inbox 的实际结果。之后增加平台用 sync "&lt;TARGET&gt;" --platforms &lt;新增名称&gt;，无需重复 clone；旧对话需要主动重新读取规则。
+8. 告诉我新开对话验证：让 agent 读取 .multi-agent-collab/START_HERE.md，报告当前分支、看板和 inbox 的实际结果。之后增加平台用 sync "&lt;TARGET&gt;" --platforms &lt;新增名称&gt;，无需重复 clone；旧对话需要主动重新读取规则。
 
 执行安装范围内可恢复的修复即可；遇到需要改变现有项目规则或 Git 跟踪状态的冲突，再说明具体情况让我决定。</code></pre>
             </div>
@@ -580,9 +580,9 @@ python "$HOME/multi-agent-collab/install.py" sync .</code></pre>
             <div class="checks">
               <p class="ac-title mono">安装后，确认真实生效</p>
               <ol>
-                <li><b>①</b> 打开项目里的 <code>AGENTS.md</code> 第 6 节，把示例换成你项目真实的测试 / 构建命令（定制区，升级自动保留）</li>
-                <li><b>②</b> 执行安装器 <code>doctor</code>，再运行 <code>python tools/agents_status.py --brief</code>，检查入口与忽略规则</li>
-                <li><b>③</b> <b>新开一个 AI 对话</b>，确认它实际读取 <code>.agents/START_HERE.md</code>，并报告分支、看板和 inbox 的当前结果</li>
+                <li><b>①</b> 打开项目里的 <code>.multi-agent-collab/RULES.md</code> 第 6 节，把示例换成你项目真实的测试 / 构建命令（定制区，升级自动保留）</li>
+                <li><b>②</b> 执行安装器 <code>doctor</code>，再运行 <code>python .multi-agent-collab/tools/agents_status.py --brief</code>，检查入口与忽略规则</li>
+                <li><b>③</b> <b>新开一个 AI 对话</b>，确认它实际读取 <code>.multi-agent-collab/START_HERE.md</code>，并报告分支、看板和 inbox 的当前结果</li>
               </ol>
             </div>
           </div>
@@ -593,12 +593,12 @@ python "$HOME/multi-agent-collab/install.py" sync .</code></pre>
           <table class="cmd-table mono">
             <thead><tr><th style="width:46%">命令</th><th>作用</th></tr></thead>
             <tbody>
-              <tr><td class="cmd" data-copy="python tools/agents_status.py --brief">python tools/agents_status.py --brief</td><td>一行摘要：无事只回 OK，AI 开工首选</td></tr>
-              <tr><td class="cmd" data-copy="python tools/agents_status.py">python tools/agents_status.py</td><td>完整终端看板</td></tr>
-              <tr><td class="cmd" data-copy="python tools/agents_status.py --web">python tools/agents_status.py --web</td><td>图形化看板，可直接对 AI 下指令</td></tr>
-              <tr><td class="cmd" data-copy="python tools/agents_status.py --html">python tools/agents_status.py --html</td><td>导出零外链单文件 HTML 快照</td></tr>
-              <tr><td class="cmd" data-copy="python tools/agents_status.py --json">python tools/agents_status.py --json</td><td>结构化输出，给脚本用</td></tr>
-              <tr><td class="cmd" data-copy="python tools/agents_status.py --selfcheck">python tools/agents_status.py --selfcheck</td><td>看板内置 48 项断言自检</td></tr>
+              <tr><td class="cmd" data-copy="python .multi-agent-collab/tools/agents_status.py --brief">python .multi-agent-collab/tools/agents_status.py --brief</td><td>一行摘要：无事只回 OK，AI 开工首选</td></tr>
+              <tr><td class="cmd" data-copy="python .multi-agent-collab/tools/agents_status.py">python .multi-agent-collab/tools/agents_status.py</td><td>完整终端看板</td></tr>
+              <tr><td class="cmd" data-copy="python .multi-agent-collab/tools/agents_status.py --web">python .multi-agent-collab/tools/agents_status.py --web</td><td>图形化看板，可直接对 AI 下指令</td></tr>
+              <tr><td class="cmd" data-copy="python .multi-agent-collab/tools/agents_status.py --html">python .multi-agent-collab/tools/agents_status.py --html</td><td>导出零外链单文件 HTML 快照</td></tr>
+              <tr><td class="cmd" data-copy="python .multi-agent-collab/tools/agents_status.py --json">python .multi-agent-collab/tools/agents_status.py --json</td><td>结构化输出，给脚本用</td></tr>
+              <tr><td class="cmd" data-copy="python .multi-agent-collab/tools/agents_status.py --selfcheck">python .multi-agent-collab/tools/agents_status.py --selfcheck</td><td>看板内置 48 项断言自检</td></tr>
             </tbody>
           </table>
         </div>

@@ -19,6 +19,7 @@ from pathlib import Path
 # 此脚本会安装进任意技术栈的项目，不能在 tools/ 下留下未被忽略的 Python 缓存。
 sys.dont_write_bytecode = True
 import agents_status as board
+from agents_layout import state_path, state_relative
 from agents_policy import effective_policy, check_task_branch, validate_policy
 
 
@@ -81,7 +82,7 @@ def worktree_roots(root: Path) -> list[Path]:
 @contextmanager
 def coordination_lock(primary: Path):
     """进程退出自动释放系统锁；不删除锁文件，避免替换 inode 形成两把锁。"""
-    lock_path = safe_path(primary, ".agents/coordination.lock")
+    lock_path = safe_path(primary, state_relative(primary, ".agents/coordination.lock"))
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with lock_path.open("a+b") as stream:
         if stream.seek(0, os.SEEK_END) == 0:
@@ -170,7 +171,7 @@ def put_fields(text: str, fields: dict[str, str]) -> str:
 
 def append_worklog(root: Path, session_id: str, branch: str, summary: str, tests: str = "") -> None:
     now = datetime.now()
-    path = safe_path(root, f".agents/worklog/{now:%Y-%m-%d}.md")
+    path = safe_path(root, state_relative(root, f".agents/worklog/{now:%Y-%m-%d}.md"))
     entry = f"\n## {now:%H:%M} · {session_id}\n\n- 分支：{branch}\n- {summary}\n"
     if tests:
         entry += f"- 测试：{tests}\n"
@@ -183,7 +184,7 @@ def append_worklog(root: Path, session_id: str, branch: str, summary: str, tests
 
 def handoff_note(root: Path, session_id: str, summary: str) -> str:
     now = datetime.now()
-    inbox = safe_path(root, ".agents/inbox")
+    inbox = safe_path(root, state_relative(root, ".agents/inbox"))
     inbox.mkdir(parents=True, exist_ok=True)
     # 独立文件名避免与网页指令的递增序号竞争；from 使用 agent，绝不伪装成人类。
     path = inbox / f"Q-{now:%Y-%m-%d}-handoff-{uuid.uuid4().hex[:8]}.md"
@@ -200,12 +201,12 @@ def handoff_updates(root: Path, record: dict, session_id: str, reply: str) -> li
     relative = record.get("handoff_inbox", "")
     if relative:
         candidate = safe_path(root, relative.replace("\\", "/"))
-        if candidate.parent != root / ".agents/inbox" or "-handoff-" not in candidate.name:
+        if candidate.parent != state_path(root, "inbox") or "-handoff-" not in candidate.name:
             raise ValueError("关联交接路径无效，未修改会话")
         candidates = [candidate] if candidate.is_file() else []
     else:
         # 兼容 1.5.0：那时没有保存关联路径，仅匹配本会话生成的交接条。
-        candidates = [p for p in safe_path(root, ".agents/inbox").glob("Q-*-handoff-*.md")
+        candidates = [p for p in safe_path(root, state_relative(root, ".agents/inbox")).glob("Q-*-handoff-*.md")
                       if board.parse_kv(p).get("from") == session_id]
     pending = []
     for path in candidates:
@@ -249,7 +250,7 @@ def takeover_path(root: Path, relative: str) -> Path:
 def takeover_snapshot(roots: list[Path], session_id: str) -> dict:
     if not re.fullmatch(SESSION_ID, session_id):
         raise ValueError("无效的会话 ID")
-    locations = [takeover_path(root, f".agents/sessions/{session_id}.md") for root in roots]
+    locations = [takeover_path(root, state_relative(root, f".agents/sessions/{session_id}.md")) for root in roots]
     locations = [path for path in locations if path.is_file()]
     if len(locations) != 1:
         raise ValueError("会话不存在或多个工作区存在相同 ID，先人工核对")
@@ -318,8 +319,8 @@ def takeover_blockers(snapshot: dict) -> list[str]:
     return blockers
 
 
-def declaration_name(plan_id: str) -> str:
-    return ".agents/inbox/Q-" + plan_id[2:] + "-takeover.md"
+def declaration_name(primary: Path, plan_id: str) -> str:
+    return state_relative(primary, ".agents/inbox/Q-" + plan_id[2:] + "-takeover.md")
 
 
 def valid_timestamp(value) -> bool:
@@ -329,7 +330,7 @@ def valid_timestamp(value) -> bool:
 def read_takeover_plan(primary: Path, plan_id: str) -> tuple[Path, dict]:
     if not re.fullmatch(PLAN_ID, plan_id):
         raise ValueError("无效的接管计划 ID")
-    path = takeover_path(primary, f".agents/takeovers/{plan_id}.json")
+    path = takeover_path(primary, state_relative(primary, f".agents/takeovers/{plan_id}.json"))
     with path.open("rb") as stream:
         data = stream.read(1024 * 1024 + 1)
     if len(data) > 1024 * 1024:
@@ -343,7 +344,7 @@ def read_takeover_plan(primary: Path, plan_id: str) -> tuple[Path, dict]:
             or not isinstance(plan["requester"], str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,31}", plan["requester"])
             or not isinstance(plan["reason"], str)
             or not valid_timestamp(plan["created_at"])
-            or plan["created_at"] <= 0 or plan["declaration"] != declaration_name(plan_id)
+            or plan["created_at"] <= 0 or plan["declaration"] != declaration_name(primary, plan_id)
             or not isinstance(plan["declaration_sha256"], str) or not re.fullmatch(SHA256, plan["declaration_sha256"])):
         raise ValueError("接管计划结构无效，未修改原会话")
     one_line(plan["reason"], "接管理由")
@@ -392,13 +393,13 @@ def execute_takeover(args, root: Path, roots: list[Path], policy) -> dict:
             if blockers:
                 raise ConflictError("；".join(blockers))
             reason = one_line(args.reason, "接管理由")
-            directory = takeover_path(primary, ".agents/takeovers")
+            directory = takeover_path(primary, state_relative(primary, ".agents/takeovers"))
             for old_file in directory.glob("T-*.json"):
                 _path, old = read_takeover_plan(primary, old_file.stem)
                 if old["status"] in ("pending", "applying") and old["snapshot"]["session_id"] == args.session:
                     raise ConflictError(f"已有待处理计划 {old_file.stem}，先检查或取消，不重复发布声明")
             plan_id = "T-" + datetime.now().strftime("%Y%m%d-%H%M") + "-" + uuid.uuid4().hex[:8]
-            relative = declaration_name(plan_id)
+            relative = declaration_name(primary, plan_id)
             declaration = takeover_path(primary, relative)
             if declaration.exists() or (directory / (plan_id + ".json")).exists():
                 raise ConflictError("计划编号碰撞，请重新生成；未覆盖已有文件")
@@ -446,12 +447,12 @@ def execute_takeover(args, root: Path, roots: list[Path], policy) -> dict:
             if blockers:
                 raise ConflictError("；".join(blockers))
             source = Path(snapshot["workspace"])
-            path = takeover_path(source, f".agents/sessions/{target_id}.md")
+            path = takeover_path(source, state_relative(source, f".agents/sessions/{target_id}.md"))
             record = board.parse_kv(path)
             handoffs = handoff_updates(source, record, target_id, "按人工确认收回协作占用，计划 " + args.plan)
             for candidate, _text in handoffs:
                 takeover_path(source, candidate.relative_to(source).as_posix())
-            takeover_path(source, f".agents/worklog/{datetime.now():%Y-%m-%d}.md")
+            takeover_path(source, state_relative(source, f".agents/worklog/{datetime.now():%Y-%m-%d}.md"))
             updated = put_fields(path.read_text(encoding="utf-8"), {"status": "closed", "closed_by": actor,
                                  "closed_at": datetime.now().isoformat(timespec="seconds"),
                                  "closed_reason": "按人工确认收回占用，未声称原任务或测试完成", "takeover_plan": args.plan})
@@ -475,7 +476,7 @@ def execute_takeover(args, root: Path, roots: list[Path], policy) -> dict:
 def execute(args: argparse.Namespace) -> dict:
     root = Path(args.root).expanduser().resolve()
     root = Path(git(root, "rev-parse", "--show-toplevel")).resolve()
-    if not safe_path(root, ".agents/sessions").is_dir():
+    if not safe_path(root, state_relative(root, ".agents/sessions")).is_dir():
         raise ValueError("项目尚未安装会话目录，请先运行安装器")
     roots = worktree_roots(root)
     branch = git(root, "branch", "--show-current")
@@ -523,7 +524,7 @@ def execute(args: argparse.Namespace) -> dict:
             existing_ids = {session["id"] for session in current_sessions}
             while True:
                 session_id = f"{agent}-{datetime.now():%y%m%d-%H%M}-{uuid.uuid4().hex[:4]}"
-                path = safe_path(root, f".agents/sessions/{session_id}.md")
+                path = safe_path(root, state_relative(root, f".agents/sessions/{session_id}.md"))
                 if session_id not in existing_ids and not path.exists():
                     break
             text = (f"# Session: {session_id}\n\n- agent: {agent}\n- branch: {branch}\n- task: {task}\n"
@@ -537,7 +538,7 @@ def execute(args: argparse.Namespace) -> dict:
         session_id = args.session
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,100}", session_id):
             raise ValueError("无效的会话 ID")
-        path = safe_path(root, f".agents/sessions/{session_id}.md")
+        path = safe_path(root, state_relative(root, f".agents/sessions/{session_id}.md"))
         text = path.read_text(encoding="utf-8")
         record = board.parse_kv(path)
         if record.get("agent") != agent:

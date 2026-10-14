@@ -1,4 +1,4 @@
-# `.agents/` — 多 Agent 共享记忆区（本机）
+# `.multi-agent-collab/` — 多 Agent 共享记忆区（本机）
 
 这里是当前项目的 AI 编码会话之间的**公告板 + 交接班本**。
 **纯本机目录，不进 git**（已在 `.git/info/exclude` 中忽略）：同一工作区里切任何分支它都在，
@@ -8,7 +8,7 @@
 ## 目录结构
 
 ```
-.agents/
+.multi-agent-collab/
 ├── README.md                 # 本文件
 ├── START_HERE.md             # 每次新对话的最小阅读顺序
 ├── WORKFLOW.md               # 场景选择、状态转换、完整命令和验证边界
@@ -47,7 +47,7 @@
 ## 会话文件 `sessions/<会话ID>.md`
 
 - 文件名即会话 ID：`<agent>-<YYMMDD-HHMM>-<4位随机>`，如 `trae-261009-1115-a3f9`
-- 开头的键值块供 `tools/agents_status.py` 解析，**键名不要改**，时间一律
+- 开头的键值块供 `.multi-agent-collab/tools/agents_status.py` 解析，**键名不要改**，时间一律
   `YYYY-MM-DD HH:MM`（**本机本地时间**，24 小时制；不要写时区后缀、不要写口语如"刚才"、
   不要写未来时间——无法解析的心跳一律按失活处理）
 - status（取第一个词，精确匹配；不要用"未完成"这种包含"完成"的写法）：
@@ -57,7 +57,7 @@
 - heartbeat：每 ≤ 15 分钟或每完成一阶段更新，**保存文件即生效，不用 commit/push**；
   超过 15 分钟没更新（或时间无法解析、比当前时刻快 10 分钟以上）视为失活
 - 收工把 status 置 `done`；没做完要走，置 `blocked`、填 `handoff` 并在 inbox 留交接问题
-- 建议使用 `tools/agents_session.py` 的 start / heartbeat / handoff / resume / finish 维护，避免漏字段。
+- 建议使用 `.multi-agent-collab/tools/agents_session.py` 的 start / heartbeat / handoff / resume / finish 维护，避免漏字段。
   `files` 是 JSON 数组（如 `["src/app.py", "docs/"]`）；看板显示占用并提醒交叉冲突。
   同工作区不可重复登记；独立 worktree 可并行处理不重叠的文件。失活不会自动释放占用。
 - `progress` 是当前简短进度；`handoff` 是阻塞说明；`handoff_inbox` 指向该会话生成的交接条。
@@ -85,19 +85,19 @@
 ## 查看全景
 
 ```powershell
-python tools/agents_status.py --brief  # 开工首选：一行摘要（OK 即可开工，最省 token）
-python tools/agents_status.py          # 完整看板：本机全部 worktree 的活跃会话 + 日志 + 未答
+python .multi-agent-collab/tools/agents_status.py --brief  # 开工首选：一行摘要（OK 即可开工，最省 token）
+python .multi-agent-collab/tools/agents_status.py          # 完整看板：本机全部 worktree 的活跃会话 + 日志 + 未答
 ```
 
 - **省 token**：日常开工用 `--brief`（约 80 token，无告警只回一行 OK，rc=1 才展开完整版）；
-  不要为了"看现状"去读 `tools/agents_status.py` 源码——命令输出就是使用契约（AGENTS.md 3.1 接口卡）
+  不要为了"看现状"去读 `.multi-agent-collab/tools/agents_status.py` 源码——命令输出就是使用契约（AGENTS.md 3.1 接口卡）
 - 在项目**任意子目录**运行都会自动定位到仓库根；也可用 `--root <路径>` 显式指定
-- 看板会聚合主工作区和所有 linked worktree 里的 `.agents/`（同一会话 ID 取最新心跳）
+- 看板会聚合主工作区和所有 linked worktree 里的 `.multi-agent-collab/`（同一会话 ID 取最新心跳）
 - 加 `--prs` 可同时只读列出 open PR（gh 不可用时只提示、不报错，退出码不变）
 - 退出码 0 = 无告警，1 = 有失活会话/未答问题/未注册 worktree，可当开工门禁
 - **给人看（不影响 agent）**：`--web` 启动浏览器图形化实时看板
   （5 秒自动刷新）；`--html [路径]` 导出零外链单文件快照
-  （默认 `.agents/board.html`，可离线打开或发给别人；`--open` 导出后自动打开）
+  （默认 `.multi-agent-collab/board.html`，可离线打开或发给别人；`--open` 导出后自动打开）
 - **人在网页上指挥 agent**：`--web` 页面可直接发指令（默认仅 127.0.0.1）。
   指令就是本目录 `inbox/` 里 `from: human` 的标准问事板文件（`to: any` 广播或点名会话），
   agent 按 AGENTS.md 规程在阶段间隙读取、把回复写回同一文件，页面实时显示回复并可弹桌面通知；
@@ -110,4 +110,4 @@ python tools/agents_status.py          # 完整看板：本机全部 worktree �
 ## 注意
 
 - 这里虽然不入库，但可能随目录拷贝到别处：**不要写密钥、WiFi 密码、API key**
-- 不进 git 意味着没有远程备份：重要节点把 `.agents/` 拷一份到仓库外
+- 不进 git 意味着没有远程备份：重要节点把 `.multi-agent-collab/` 拷一份到仓库外
