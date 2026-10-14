@@ -188,7 +188,7 @@ class Rehearsal:
     def report(self, path, error):
         text = ["# 协作流程实际演练报告", "", f"- 时间：{datetime.now().astimezone().isoformat(timespec='seconds')}",
                 f"- 结果：{'未通过' if error else '通过'}", f"- 检查数：{len(self.steps)}", f"- Python：{sys.version.split()[0]}",
-                "- 范围：真实本地 clone、Git/worktree、安装器、会话工具、HTTP 看板、业务测试和隔离 bare 远端。", 
+                "- 范围：真实本地 clone、Git/worktree、安装器、会话工具、HTTP 看板、业务测试和隔离 bare 远端。",
                 "- 边界：不创建真实 GitHub PR，不调用模型，不代替各平台的新会话加载验收。", ""]
         if error:
             text += ["## 断点", "", str(error), ""]
