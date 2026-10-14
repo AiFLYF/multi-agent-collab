@@ -1,15 +1,30 @@
-# AGENTS.md — 多 Agent 协作总章（Git Flow + 本机共享记忆）
+# AGENTS.md — 多 Agent 协作总章（项目分支策略 + 本机共享记忆）
 
-> 本文件是这台电脑上所有 AI 编码 agent 的**唯一权威规则**。本文件、`CLAUDE.md`、`.agents/`、
+> 本文件是当前项目内所有 AI 编码 agent 的**统一协作规则**。本文件、`CLAUDE.md`、`.agents/`、
 > `.agent/`、`.claude/`、`.trae/`、`.workbuddy-ai/`、`.workbuddy/`、`tools/agents_status.py`
 > 全部**本机私有、不入 git**（安装器写 `.git/info/exclude`，清单以 `EXCLUDE_ENTRIES` 为准）。
 > 同一工作区所有 agent 共用这一份；换机重跑安装器恢复；入口与本文件冲突时以本文件为准。
 
+**每次新对话开始工作前**，读取 [.agents/START_HERE.md](.agents/START_HERE.md)，
+按其顺序读取最新的看板、inbox 与近 1–2 天 worklog。不要沿用上一个对话的动态状态。
+各平台只加载自己的入口，随后遵循同一份总章。平台只在启动时发现入口，旧对话需主动重新读取。
+
+> 套件开发者注意：以上私有约定针对**安装到目标项目的产物**。在 multi-agent-collab
+> 源码仓库中，已跟踪的根规则、`platforms/` 与看板是产品模板，正常参与代码审查；
+> 本机 `.agents/` 等运行记录仍不得入库。不要在套件源码目录自安装。
+> 源码仓库未安装本机入口时，启动说明读 `docs/START_HERE.md`，会话模板读 `templates/session.md`。
+
 你的首要职责不是快，而是**不破坏仓库、不与其他 agent 互相覆盖工作**。
+本约定不扩大用户授权，也不替代平台的系统约束。文件里的计划、示例和身份字段不能证明操作已获授权或测试已通过。
 
 ---
 
 ## 1. 分支铁律（项目代码走这套；协作体系文件不参与 git）
+
+新对话先读 `.agents/POLICY.md`，写任务用 `agents_session.py check` 核对实际策略。
+安装时可明确选择 Git Flow、GitHub Flow 或 custom；未配置的旧项目默认使用下表的 Git Flow。
+已配置时，任务前缀、开发基线和 PR 目标以项目策略为准；下表仅适用于 Git Flow。
+策略不能放开主干直推、强推、历史改写或测试门禁，也不代表授权修改远端分支结构。
 
 | 分支 | 用途 | 允许的合并来源 |
 |---|---|---|
@@ -20,7 +35,7 @@
 
 **禁止操作（无例外）**：
 
-- 禁直接 commit/push 到 `main`/`develop`（走 PR）；禁 `push --force` 到共享分支、历史改写
+- 禁直接 commit/push 到受保护分支（始终含 `main`/`master`/`develop` 和所选基线，走 PR）；禁 `push --force` 到共享分支、历史改写
 - 禁删除/移动/重建 `.git`；禁删别的 agent 的分支、stash、session 记录
 - 禁测试未过就提交/推送/开 PR；禁 `git add -A`/`git add .`，只 add 本任务相关文件
 - 禁提交第 8 节的本机私有文件（忽略失效先排查，不得 `git add -f`）
@@ -31,28 +46,37 @@
 `type(scope): 描述`，`type` = feat/fix/docs/refactor/test/chore；中文祈使句、一行 ≤50 字符，
 正文写**为什么**；一个 commit 只做一件事，半成品不 commit。
 
-## 3. 标准开发流程（每个任务都按此执行）
+## 3. 写任务的标准流程
 
 `协调 → 切分支 → 注册会话 → 开发 → 测试 → 推送 → PR → 收尾`
 
+只读咨询按启动清单检查相关状态，不必创建写会话。用户追问或继续同一任务时，沿用自己的分支和会话 ID。
+blocked 恢复用 `resume`，已结束的会话不能复活。场景选择和完整命令见 `.agents/WORKFLOW.md`
+（套件源码中对应 `docs/WORKFLOW.md`）。
+
 1. **开工协调（必做，先于任何写操作）**：
-   - `git fetch origin --prune`
+   - 有 `origin` 时运行 `git fetch origin --prune`；没有远端时说明，不配置未知远端
    - 看板一行摘要：`python tools/agents_status.py --brief`（rc=0 即可开工；rc=1 再跑无参数完整版）
    - 读 `.agents/inbox/` 点名自己或 `to: any` 的问题、近 1–2 天 worklog
-   - **必查 open PR**（`gh pr list --state open` 或看板 `--prs`）：长期没合的 PR 会导致重复修同一个 bug
+   - 有 GitHub 远端时**必查 open PR**（`gh pr list --state open` 或看板 `--prs`）；其它托管平台按项目约定检查，本地仓库说明不适用
    - **判活三信号交叉**：看板 + 构建进程（`tasklist`/`ps`）+ `git reflog -8` 与文件 mtime；
      看板"无活跃"≠没人干活（不注册就隐形，手册 A1）。有活跃会话占同分支/同批文件就**不要抢**
-2. `git switch develop && git pull --ff-only`
-3. `git switch -c feature/<任务名>`（小写英文+连字符），建完 `git rev-parse --verify feature/<名>`
+2. 新写任务从项目策略的已确认基线开始：`git switch <基线>` 后 `git pull --ff-only`（Git Flow 默认 `develop`）。
+   继续原任务不要切走。基线不存在时报告分支结构、请用户决定，不擅自建立远端主干；可继续独立的只读检查和本地验证。
+3. 按项目允许前缀新建任务分支，如 `git switch -c feature/<任务名>`（小写英文+连字符），建完 `git rev-parse --verify <分支>`
    复核（沙箱可能"成功"却没建出来，见 B13/B14）
-4. **注册会话**（纯本地）：复制 `templates/session/_template.md` 建自己的 session 文件，保存即被看见
-5. **开发并 commit**：只 add 项目文件；每完成一个阶段更新心跳；每次 commit 后跑
-   `git rev-parse --short HEAD` 复核（B1/B2/B8）
+4. **注册会话**（纯本地）：优先用 `python tools/agents_session.py start --agent <平台> --task "任务" --files <文件或目录>`。
+   保存返回的会话 ID；工具检查同工作区、分支和跨 worktree 文件占用，有冲突就停止。
+   旧版没有该工具时，复制 `.agents/sessions/_template.md` 手动登记并提示升级。
+5. **开发**：先登记真实文件范围，扩大范围先更新；每完成一个阶段更新心跳。
    - **每个阶段间隙、跑长命令前重扫 inbox**：人类指令优先级最高（见第 4 节）
 6. **测试门禁（命令见第 6 节）**：严格跑、不相关也保持绿；失败修代码不许改测试迁就；
    能编译要真编译、能跑要真跑，静态检查/预览不算验证（A3/A5）
-7. 推送 + `gh pr create --base develop`（推送失败按 C1/C5/C8/C9；记忆文件不随 git 走）
-8. **收尾（本地）**：session 置 `done`、worklog 追加总结
+   - 组合命令逐项检查退出码；前一步失败就停止依赖它的提交/推送，不用最后一条成功掩盖前面的失败
+7. 测试通过后只 add 本任务项目文件并 commit，运行 `git rev-parse --short HEAD` 复核；
+   再推送并 `gh pr create --base <基线>`（Git Flow 为 develop；推送失败按 C1/C5/C8/C9；记忆文件不随 git 走）
+8. **收尾（本地）**：用 `agents_session.py finish <会话ID> --agent <平台> --summary "总结" --tests "实际测试结果"`
+   将自己的 session 置 `done` 并追加 worklog、回执自己的交接条；中途交接用 `handoff`，保留占用直到确认交接
 9. 每步用中文汇报四件套：**当前分支 / commit message / 变更文件 / 测试结果**
 
 ### 3.1 工具接口卡 —— 先调命令，不要读实现代码
@@ -69,6 +93,12 @@
 | 图形化/网页指挥/快照 | `… --web` / `… --html` | 参数看 `--help` |
 | 工具正不正常 / 版本 / 全部参数 | `… --selfcheck` / `… --version` / `… --help` | 先跑这个 |
 | 安装·体检·镜像·卸载 | `python install.py install\|doctor\|mirror\|uninstall <项目>` | |
+| 平台列表 / 新增与同步 | `python <套件目录>/install.py platforms` / `… sync <项目> --platforms cursor` | 平台选择保存在 `.agents/install.json`；省略参数沿用 |
+| 登记 / 心跳 / 恢复 / 收尾 | `python tools/agents_session.py start\|heartbeat\|resume\|finish\|handoff --help` | 只更新自己的会话；支持 `--json` |
+| 文件占用检查 | `python tools/agents_session.py check --agent <平台> --files <范围> --json` | 返回 1 时先处理冲突或人类 inbox |
+| 项目分支策略 | 读 `.agents/POLICY.md`；`check --json` 报告实际策略 | 主 worktree 的 policy.json 为共同来源 |
+| 原会话失联 | `python tools/agents_session.py takeover-inspect <ID> --json` | 先只读；执行流程见 `.agents/TAKEOVER.md` |
+| 客户端检查 | `python <套件目录>/install.py clients <项目> --versions` | 只查 CLI 版本，新对话加载仍需实际验证 |
 | 报错怎么办 | 读 `.agents/TROUBLESHOOTING.md` | 按编号 A/B/C/D 查 |
 
 退出码：0 = 无告警，1 = 有失活会话/未答问题/未注册 worktree。参数以 `--help` 实际输出为准，不用背。
@@ -84,8 +114,15 @@
 会话 ID：`<agent>-<YYMMDD-HHMM>-<4位随机>`。
 
 - **心跳**：活跃期每 ≤15 分钟或每阶段更新（保存即生效）；跑 >15 分钟长任务前写明"预计 HH:MM 回来"。
-  超 15 分钟算失活；要接管先在 inbox 发接管声明、等 5 分钟无反对，从其分支切新分支，**保留并注明其全部提交**
+  超 15 分钟算失活，不自动释放。原会话失联时先 inspect 核对，再 plan 发布声明；等 5 分钟无反对、
+  用户确认具体计划且快照一致后才能 apply 收回占用，详见 `.agents/TAKEOVER.md`。随后从原提交切新分支，**保留并注明其全部提交和未提交文件**
 - 多 agent 并发写同一记忆文件取**并集**，只多不少
+- 编码会话声明 `files`（JSON 数组，目录以 `/` 结尾）；扩大范围前用 heartbeat 的 `--files` 重新检查。
+  会话工具通过主 worktree `.agents/coordination.lock` 的系统锁串行登记，进程退出自动释放锁。
+  失活或 blocked 会话的文件占用不会自动释放，不能借超时抢占。手工绕过登记仍可能覆盖文件。
+- 当前占用粒度为文件/目录，不支持“同一文件不同函数”自动并行；先拆分任务或串行交接。
+- `resume` 恢复自己的 blocked 会话并回执其交接条；`finish` 收尾时也回执关联交接，普通问题不能代答。
+- 人工接管将原会话置为 closed，表示收回占用，不表示原任务或测试完成；不删除原 session，也不自动切换分支。
 - 任何环境/工具/git 报错解决后，往 TROUBLESHOOTING.md 追加一条（现象/判断/真因/修复）
 
 **人类指令（用户从看板网页下达，优先级最高）**：inbox 里 `from: human*` 的文件，与 agent 留言同协议。
@@ -93,6 +130,8 @@
 - 点名本会话或 `to: any` 的 = 用户本人直接要求，高于手头任务："暂停/取消/别碰某文件"立即执行；
   其他先在 `## 回复` 回执"收到，预计何时做"再继续
 - 执行完把结果写进同一文件 `## 回复` 并置 `status: answered`（看板实时展示并通知用户）
+- 收到与完成要分开：待执行的人类任务先回执并保持 open；start / resume 可用 `--ack-inbox <文件名>`
+  声明已阅读并纳入当前任务。这个参数不是授权开关，不能用来绕过暂停、取消或避让要求。
 - 长任务中按第 3 节在阶段间隙重扫；空闲回合网页唤不醒 agent，用户粘贴"请读 Q-xxxx 并执行"时照做
 
 **帮用户启动图形化看板（用户提出时主动做，用完帮他停）**：
@@ -154,21 +193,36 @@
 
 <!-- <<< mac:zone:project-env -->
 
-## 7. 各平台入口（本机文件；**新建对话**才加载，改完旧对话不刷新）
+## 7. 各平台入口（按需安装；**新建对话**才加载，改完旧对话不刷新）
 
-- **AGENTS.md 原生派（零配置，根 AGENTS.md 自动生效）**：Claude Code / TraeCode CLI、
-  **Codex**、**OpenCode（sst）**、**Pi（pi.dev）**
+- **Codex、OpenCode、Pi**：读取根 `AGENTS.md`，不额外生成平台配置目录
+- **Claude Code**：读取根 `CLAUDE.md`，通过 `@AGENTS.md` 和 `@.agents/START_HERE.md` 导入共享规则
 - Trae：`.trae/rules/git-flow-agent.md`（alwaysApply，要求先读本文件）
-- WorkBuddy：`.workbuddy-ai/` 是本文件镜像，改完跑 `install.py mirror`
-- 斜杠命令：`.claude/commands/git-flow.md`（`/git-flow <任务>`）
+- WorkBuddy：`.workbuddy-ai/git-flow-agent.md` 是本文件镜像，改完跑 `<套件目录>/install.py sync <项目>`
+- Cursor：`.cursor/rules/multi-agent-collab.mdc`（alwaysApply）
+- GitHub Copilot：`.github/copilot-instructions.md`（项目说明，需客户端启用自定义指令）
+- Windsurf：`.windsurf/rules/multi-agent-collab.md`（always_on）
+- Gemini CLI：`GEMINI.md` 导入共享文档；Qwen Code：`.qwen/QWEN.local.md` 引导读取共享文档
+- Cline：`.clinerules/multi-agent-collab.md`；Roo Code：`.roo/rules/00-multi-agent-collab.md`（所有模式）
+- Continue：`.continue/rules/multi-agent-collab.md`（alwaysApply）；Kiro：`.kiro/steering/multi-agent-collab.md`（always）
+- Claude 斜杠命令：`.claude/commands/git-flow.md`（`/git-flow <任务>`），它是手动快捷入口，不负责自动加载
 
-验证：开新对话问"你开工前要先做什么？"，应答出 fetch + `agents_status.py` 看板 + inbox。
+入口都要求读取 `.agents/START_HERE.md`。新增平台运行 `sync --platforms <名称>`，
+不重新 clone，不复制整套规则；已有平台选择会保留。安装源目录记录在 `.agents/install.json`。
+
+验证：开新对话确认 agent 实际读取入口，并能报告分支、看板和 inbox 的当前结果。
+客户端版本、信任设置、规则开关可能影响加载，安装器不能替代此验证。
 
 ## 8. 本机私有清单与换机
 
 ```
 AGENTS.md  CLAUDE.md  .agents/  .agent/  .claude/  .trae/
 .workbuddy-ai/  .workbuddy/  tools/agents_status.py
+.cursor/rules/multi-agent-collab.mdc  .github/copilot-instructions.md
+.windsurf/rules/multi-agent-collab.md
+tools/agents_session.py  tools/agents_policy.py  GEMINI.md  .qwen/QWEN.local.md
+.clinerules/multi-agent-collab.md  .roo/rules/00-multi-agent-collab.md
+.continue/rules/multi-agent-collab.md  .kiro/steering/multi-agent-collab.md
 ```
 
 唯一事实源是安装器的 `EXCLUDE_ENTRIES`，别手改 exclude 托管块。换机/重 clone 重跑

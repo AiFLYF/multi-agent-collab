@@ -31,5 +31,23 @@ jobs:
       - name: Board selfcheck
         run: python tools/agents_status.py --selfcheck
 
+      - name: Installation docs and platform catalog
+        run: python scripts/sync_install_docs.py --check
+
       - name: Installer end-to-end tests
         run: python tests/selftest.py
+
+      - name: Session coordination and platform integration
+        run: python -m unittest discover -s tests -p "test_*.py"
+
+      - name: Full workflow rehearsal
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12' }}
+        run: python scripts/rehearse_workflow.py --report .agents/rehearsal-ci.md
+
+      - name: Keep workflow rehearsal evidence
+        if: ${{ always() && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: workflow-rehearsal
+          path: .agents/rehearsal-ci.md
+          if-no-files-found: ignore

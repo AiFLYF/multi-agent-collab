@@ -1,9 +1,13 @@
 # CLAUDE.md（本机文件，不入库；见 AGENTS.md 第 8 节）
 
-本工作区的完整工作规则在 [AGENTS.md](AGENTS.md)（Git Flow 分支铁律 + 多 agent 本机共享记忆协议），
+本工作区的完整工作规则在 [AGENTS.md](AGENTS.md)（项目分支策略 + 多 agent 本机共享记忆协议），
 开始任何任务前必须先读：
 
 @AGENTS.md
+@.agents/START_HERE.md
+
+每次新对话先执行启动入口的阅读顺序，重新检查动态的看板、inbox 与近期 worklog。
+这里只导入共享规则，不另存一份规则副本。
 
 ## 项目速览
 
