@@ -7,6 +7,7 @@
 
 1. 确认工作区与分支，运行 `git status --short --branch` 和 `python tools/agents_status.py --brief`。
    看板返回 1 时展开完整版并查看原因，不能把“无活跃”当作“无人占用”。
+   读取 `.agents/POLICY.md` 的项目分支策略；旧安装缺失时按总章的 Git Flow，并在升级后生成策略说明。
 2. 读取发给当前平台、自己的会话或 `any` 的未答 inbox，以及近 1–2 天 worklog。
    收到暂停、取消或避让要求先处理；缺文件就说明，不编造记录。
 3. 判断这是只读咨询、新写任务，还是当前任务继续。只读任务不用登记写会话。
@@ -37,7 +38,7 @@ python tools/agents_session.py finish <ID> --agent <平台> --summary "实际结
 
 - 每个阶段、长命令前重扫 inbox；每 15 分钟内或每阶段更新心跳。
 - 扩大修改范围前，用 heartbeat 的 `--files` 提交**完整新列表**，检查成功后再修改。
-- blocked 保留占用；恢复原任务用 resume。done 才释放占用，不能复活已结束的记录。
+- blocked 保留占用；恢复原任务用 resume。正常收尾用 done；失联接管按 [TAKEOVER.md](TAKEOVER.md) 收回为 closed，不能复活已结束的记录。
 - resume / finish 回执自己的交接条，普通问题仍需在原文件里回复。
 - 测试失败不能提交或推送；预览和静态检查不能替代实际运行。
 
@@ -47,6 +48,6 @@ python tools/agents_session.py finish <ID> --agent <平台> --summary "实际结
 ## 同步入口
 
 新增平台或刷新 WorkBuddy 镜像用 `python "<套件目录>/install.py" sync "<项目>" --platforms <新增平台>`；
-没有新增平台时省略参数。核心工具和规则升级使用 install，实际套件路径记录在 install.json 的 source_dir。
+没有新增平台时省略参数。sync 同时刷新项目策略说明；核心工具和规则升级使用 install，实际套件路径记录在 install.json 的 source_dir。
 已有对话不会因为文件变化就自动重新载入；需要新开对话或明确重读。
 系统锁只保护登记更新，不能锁住源码；规则是否被客户端加载仍需实际新会话验收。

@@ -1,4 +1,4 @@
-# WorkBuddy 入口：Git Flow 多 agent 开发规则（本机文件，不入库）
+# WorkBuddy 入口：多 agent 开发规则（本机文件，不入库）
 
 > 本文件是仓库根 AGENTS.md 的本地镜像，由 multi-agent-collab 的 `install.py` 生成。
 > - 不一致时以 AGENTS.md 为准；改完 AGENTS.md 后运行
@@ -9,7 +9,7 @@
 >   （完整清单以安装器 EXCLUDE_ENTRIES 为准）
 > - 按需新增入口：.cursor/rules/multi-agent-collab.mdc、.github/copilot-instructions.md、
 >   .windsurf/rules/multi-agent-collab.md；只忽略这些文件，不隐藏整个配置目录
-> - tools/agents_session.py、GEMINI.md、.qwen/QWEN.local.md、.clinerules/multi-agent-collab.md、
+> - tools/agents_session.py、tools/agents_policy.py、GEMINI.md、.qwen/QWEN.local.md、.clinerules/multi-agent-collab.md、
 >   .roo/rules/00-multi-agent-collab.md、.continue/rules/multi-agent-collab.md、.kiro/steering/multi-agent-collab.md 同样本机私有
 > - 报错先查 .agents/TROUBLESHOOTING.md
 

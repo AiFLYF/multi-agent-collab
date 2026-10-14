@@ -9,6 +9,7 @@
     python install.py doctor [TARGET]             # 体检：文件齐不齐、忽略生不生效、看板能不能跑
     python install.py sync [TARGET]               # 同步已选平台；--platforms 可追加新平台
     python install.py platforms                   # 查看支持的平台与入口
+    python install.py clients [TARGET]            # 只检查所选平台的 CLI 可发现性；--versions 可查询版本
     python install.py mirror [TARGET]             # 兼容旧命令：同步 WorkBuddy 镜像
 
 常用选项：
@@ -38,7 +39,10 @@ from datetime import datetime
 from pathlib import Path
 
 KIT_ROOT = Path(__file__).resolve().parent
-KIT_VERSION = "1.5.1"   # 升级 kit 时记得改；会写进目标项目的 .agents/install.json
+KIT_VERSION = "1.6.0"   # 升级 kit 时记得改；会写进目标项目的 .agents/install.json
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(KIT_ROOT / "tools"))
+from agents_policy import POLICY_FILE, POLICY_DOC, build_policy, effective_policy, render_policy  # noqa: E402
 
 # 与 tools/agents_status.py 同名同义：git 可执行文件解析的环境变量覆盖
 # （两份小拷贝是有意为之——看板会被单独装进目标项目，不能 import 安装器）。
@@ -91,9 +95,11 @@ CORE_FILES = [
     ("AGENTS.md", "AGENTS.md", "project-env"),
     ("tools/agents_status.py", "tools/agents_status.py", None),
     ("tools/agents_session.py", "tools/agents_session.py", None),
+    ("tools/agents_policy.py", "tools/agents_policy.py", None),
     ("docs/README.md", ".agents/README.md", None),
     ("docs/START_HERE.md", ".agents/START_HERE.md", None),
     ("docs/WORKFLOW.md", ".agents/WORKFLOW.md", None),
+    ("docs/TAKEOVER.md", ".agents/TAKEOVER.md", None),
     ("docs/TROUBLESHOOTING.md", ".agents/TROUBLESHOOTING.md", "__troubles__"),
     ("templates/session.md", ".agents/sessions/_template.md", None),
     ("templates/inbox.md", ".agents/inbox/_template.md", None),
@@ -201,6 +207,7 @@ EXCLUDE_ENTRIES = [
     "/.workbuddy/",
     "/tools/agents_status.py",
     "/tools/agents_session.py",
+    "/tools/agents_policy.py",
     "/.cursor/rules/multi-agent-collab.mdc",
     "/.github/copilot-instructions.md",
     "/.windsurf/rules/multi-agent-collab.md",
@@ -747,6 +754,26 @@ def apply_install_plan(target: Path, plan: list[tuple[str, str]], dry_run: bool)
     return stats
 
 
+def policy_plan(target: Path, args=None):
+    primary = primary_worktree(target)
+    current = effective_policy(target, primary)
+    changed = args is not None and any(getattr(args, key, None) is not None for key in
+                                      ("workflow", "base_branch", "task_prefixes", "protect_branches"))
+    if changed:
+        prefixes = args.task_prefixes.split(",") if args.task_prefixes is not None else None
+        protected = args.protect_branches.split(",") if args.protect_branches is not None else None
+        policy = build_policy(args.workflow or current["workflow"], args.base_branch or
+                              (None if args.workflow else current["base_branch"]),
+                              prefixes if prefixes is not None else (None if args.workflow else current["task_prefixes"]),
+                              protected if protected is not None else current["protected_branches"])
+        if primary is not None and primary != target and policy != current:
+            raise ValueError(f"请在主工作区 {primary} 修改仓库策略，再同步各 worktree")
+    else:
+        policy = current
+    return [(POLICY_FILE, json.dumps(policy, ensure_ascii=False, indent=2) + "\n"),
+            (POLICY_DOC, render_policy(policy))]
+
+
 def cmd_install(args: argparse.Namespace) -> int:
     try:
         target = resolve_target(args.target)
@@ -765,6 +792,7 @@ def cmd_install(args: argparse.Namespace) -> int:
     if args.dry_run:
         print("  （--dry-run：只演示，不写任何文件）")
     plan = install_plan(target, project_name, platforms)
+    plan.extend(policy_plan(target, args))
     stats = apply_install_plan(target, plan, args.dry_run)
     save_meta(target, project_name, platforms, args.dry_run)
     for name in platforms:
@@ -779,6 +807,7 @@ def cmd_install(args: argparse.Namespace) -> int:
           "旧版备份统一在 .agents/backups/。")
     print(f'体检：python "{KIT_ROOT / "install.py"}" doctor "{target}"')
     print(f'新增平台：python "{KIT_ROOT / "install.py"}" sync "{target}" --platforms cursor')
+    print(f"项目策略：{target / POLICY_DOC}（配置不修改实际 Git 分支）")
     return 0
 
 
@@ -811,6 +840,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     ok(f"目标目录存在（Python {sys.version_info.major}.{sys.version_info.minor}）")
 
     meta = read_meta(target)
+    policy = effective_policy(target, primary_worktree(target))
     if meta:
         inst_ver = meta.get("kit_version", "未知（旧版本安装）")
         if inst_ver == KIT_VERSION:
@@ -820,6 +850,15 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                  " —— 建议跑一次 install.py install 升级（定制区会自动保留）")
     elif (target / "AGENTS.md").exists():
         warn("没有 .agents/install.json（1.0 版之前手工安装？）—— 重跑一次安装器可登记版本")
+
+    print("\n【项目分支策略】")
+    ok(f"{policy['workflow']}；PR 基线 {policy['base_branch']}；任务前缀 {', '.join(policy['task_prefixes'])}")
+    if read_text(target / POLICY_DOC) != render_policy(policy):
+        warn("项目策略说明未生成或已过期，请执行 install / sync 同步")
+    base_ready, _ = git_ok(target, "rev-parse", "--verify", "refs/heads/" + policy["base_branch"])
+    remote_ready, _ = git_ok(target, "rev-parse", "--verify", "refs/remotes/origin/" + policy["base_branch"])
+    if not base_ready and not remote_ready:
+        warn(f"未找到基线 {policy['base_branch']}；请按项目实际流程确认，不会自动建立远端分支")
 
     print("\n【核心文件】")
     main_wt = primary_worktree(target)
@@ -878,6 +917,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             (ok if has_block else fail)("托管忽略块存在（私有/公共 exclude 至少一处）")
             # 验证本次实际管理的路径。未选平台已有的团队配置不属于本套件。
             paths = [dst for _src, dst, _zone in CORE_FILES + platform_files(platforms)]
+            paths.extend([POLICY_FILE, POLICY_DOC])
             if meta:
                 paths.append(INSTALL_META)
             missing = set(unignored_paths(target, paths))
@@ -942,6 +982,7 @@ def cmd_sync(args: argparse.Namespace) -> int:
     print(f"multi-agent-collab 平台同步  {target}")
     print(f"  已选平台：{', '.join(platforms) or 'none（仅通用规则）'}")
     plan = install_plan(target, project_name, platforms, sync_only=True)
+    plan.extend(policy_plan(target))
     # 给 1.4 安装补上新入口；已有的启动文档和总章不在 sync 中覆盖。
     if not (target / ".agents/START_HERE.md").exists():
         startup = read_text(KIT_ROOT / "docs/START_HERE.md")
@@ -970,6 +1011,62 @@ def cmd_platforms(args: argparse.Namespace) -> int:
         for item in catalog:
             files = "、".join(item["files"]) or "AGENTS.md（原生，无额外文件）"
             print(f"  {item['id']:<10} {item['label']:<16} {files}")
+    return 0
+
+
+CLIENT_COMMANDS = {"codex": "codex", "claude": "claude", "opencode": "opencode", "pi": "pi",
+                   "gemini": "gemini", "qwen": "qwen"}
+
+
+def client_readiness(platforms: list[str], versions: bool = False) -> list[dict]:
+    """只运行固定命令的 --version，不启动模型、不读取配置或记录原始输出。"""
+    rows = []
+    for name in platforms:
+        command = CLIENT_COMMANDS.get(name)
+        row = {"id": name, "label": PLATFORM_LABELS[name], "command": command,
+               "discovered": None, "probe_status": "manual", "version": None,
+               "session_verified": False}
+        if command:
+            executable = shutil.which(command)
+            row.update(discovered=executable is not None,
+                       probe_status="not-requested" if executable else "not-found")
+            if executable and versions:
+                try:
+                    result = subprocess.run([executable, "--version"], capture_output=True, text=True,
+                                            encoding="utf-8", errors="replace", timeout=12,
+                                            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                    match = re.search(r"(?<![\w.])(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z][0-9A-Za-z.-]*)?)(?![\w.])",
+                                      result.stdout)
+                    if result.returncode:
+                        row["probe_status"] = "failed"
+                    elif match:
+                        row.update(probe_status="ok", version=match[1])
+                    else:
+                        row["probe_status"] = "unrecognized"
+                except subprocess.TimeoutExpired:
+                    row["probe_status"] = "timeout"
+                except OSError:
+                    row["probe_status"] = "failed"
+        rows.append(row)
+    return rows
+
+
+def cmd_clients(args: argparse.Namespace) -> int:
+    platforms = parse_platforms(args.platforms) if args.platforms is not None else saved_platforms(Path(args.target).resolve())
+    if platforms is None:
+        raise ValueError("没有已保存的平台选择；请用 --platforms codex,claude 指定要检查的平台")
+    rows = client_readiness(platforms, args.versions)
+    notice = "此检查不启动模型。PATH 未发现命令不代表客户端未安装；新对话是否加载规则仍需在客户端验证。"
+    if args.json:
+        print(json.dumps({"clients": rows, "notice": notice}, ensure_ascii=False, indent=2))
+    else:
+        labels = {"manual": "IDE/应用内手动验证", "not-found": "PATH 未发现 CLI",
+                  "not-requested": "CLI 已发现（加 --versions 查询版本）", "ok": "版本查询成功",
+                  "failed": "版本命令失败", "timeout": "版本命令超时", "unrecognized": "输出中未识别版本号"}
+        for row in rows:
+            version = " " + row["version"] if row["version"] else ""
+            print(f"  {row['label']}: {labels[row['probe_status']]}{version}；新对话加载：待验证")
+        print(notice)
     return 0
 
 
@@ -1015,7 +1112,7 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
 
     if not args.purge_files:
         print("\n已完成：只移除了忽略托管块。所有协作文件仍在磁盘上（此刻起会出现在 git status）。")
-        print("会话/worklog/inbox/备份/手册 D 组条目都是你的数据，本命令永不删除。")
+        print("会话/worklog/inbox/备份/项目策略/接管审计/手册 D 组条目都是你的数据，本命令永不删除。")
         print("如要一并清理**未被你改过的**套件文件，加 --purge-files 再跑一次"
               "（改过的文件会自动保留并列出）。")
         return 0
@@ -1067,6 +1164,7 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
                 pass
 
     print(f"\n完成：删除 {len(deleted)} 个未修改的套件文件，保留 {len(kept)} 个含定制的文件。")
+    print("项目策略 policy.json / POLICY.md、接管审计和协作记录仍保留；忽略已移除，请勿误提交。")
     backups = target / ".agents" / "backups"
     if backups.exists():
         print(f"历史备份仍在 {backups}（由你决定是否手工删除）。")
@@ -1093,6 +1191,11 @@ def main() -> int:
     p_inst.add_argument("--project-name", default=None,
                         help="替换 {{PROJECT_NAME}}（默认读 .agents/install.json，再默认用目录名）")
     p_inst.add_argument("--dry-run", action="store_true", help="只打印，不落盘")
+    p_inst.add_argument("--workflow", choices=["git-flow", "github-flow", "custom"], default=None,
+                        help="明确选择分支策略；初装默认 git-flow，升级沿用")
+    p_inst.add_argument("--base-branch", default=None, help="PR 基线，不自动创建分支")
+    p_inst.add_argument("--task-prefixes", default=None, help="允许的任务分支前缀，逗号分隔，均以 / 结尾")
+    p_inst.add_argument("--protect-branches", default=None, help="额外保护分支，逗号分隔；核心主干始终保护")
     p_inst.set_defaults(func=cmd_install)
 
     p_doc = sub.add_parser("doctor", help="体检安装结果")
@@ -1108,6 +1211,13 @@ def main() -> int:
     p_list = sub.add_parser("platforms", help="列出可选平台及生成的文件")
     p_list.add_argument("--json", action="store_true", help="输出结构化平台目录")
     p_list.set_defaults(func=cmd_platforms)
+
+    p_clients = sub.add_parser("clients", help="检查所选客户端 CLI；不会调用模型或证明规则已加载")
+    p_clients.add_argument("target", nargs="?", default=".")
+    p_clients.add_argument("--platforms", default=None, help="待检查的平台；默认使用项目保存的选择")
+    p_clients.add_argument("--versions", action="store_true", help="运行固定的 --version 命令，每个最多等待 12 秒")
+    p_clients.add_argument("--json", action="store_true")
+    p_clients.set_defaults(func=cmd_clients)
 
     p_mir = sub.add_parser("mirror", help="按目标当前 AGENTS.md 重生成 WorkBuddy 镜像")
     p_mir.add_argument("target", nargs="?", default=".")

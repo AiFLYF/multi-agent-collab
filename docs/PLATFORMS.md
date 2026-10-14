@@ -55,6 +55,18 @@ python "$HOME/multi-agent-collab/install.py" sync .
 
 ## 如何确认真的生效
 
+可先查询项目已选客户端的 CLI：
+
+```text
+python <套件目录>/install.py clients <项目>
+python <套件目录>/install.py clients <项目> --versions --json
+```
+
+不加 --versions 只查 PATH；加上后运行固定的版本命令，不启动模型或修改全局配置。
+没有安装记录时用 --platforms 指定检查范围。IDE/应用内平台显示手动验证，不会误报“未安装”。
+输出只保留版本与状态，不保存原始 stdout/stderr；session_verified 始终为 false，需要下面的实际新对话检查。
+命令返回 0 表示检查已完成，不表示每个平台可用；检查各条目的 probe_status。
+
 先执行 `doctor` 检查文件、镜像一致性和 Git 忽略，再新开对话使用：
 
 ```text

@@ -12,6 +12,8 @@
 ├── README.md                 # 本文件
 ├── START_HERE.md             # 每次新对话的最小阅读顺序
 ├── WORKFLOW.md               # 场景选择、状态转换、完整命令和验证边界
+├── POLICY.md / policy.json   # 项目分支策略：阅读入口 / 配置事实源
+├── TAKEOVER.md / takeovers/  # 失联接管手册 / 不自动清理的计划和审计
 ├── install.json              # 项目名、已选平台、套件源路径与版本
 ├── coordination.lock         # 登记过程的系统锁（主 worktree 共用，退出自动释放）
 ├── sessions/                 # 每个活跃会话一个文件：我是谁、在哪个分支、心跳
@@ -61,6 +63,8 @@
 - `progress` 是当前简短进度；`handoff` 是阻塞说明；`handoff_inbox` 指向该会话生成的交接条。
   resume / finish 只自动回执自己的交接条，不会替你回答其它问题。
 - `acknowledged_inbox` 记录本次 start / resume 显式确认已纳入任务的人类指令；它不改变原指令的 open 状态。
+- 人工接管后状态为 `closed`；`closed_by`、`closed_at`、`takeover_plan` 保存出处，原正文保留。
+  这仅表示占用已收回，不代表原任务完成，具体步骤见 [TAKEOVER.md](TAKEOVER.md)。
 - 头部字段表示当前状态，正文保留上下文与历史；使用范式见 [WORKFLOW.md](WORKFLOW.md)。
 
 ## 工作日志 `worklog/YYYY-MM-DD.md`

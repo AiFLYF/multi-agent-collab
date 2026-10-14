@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -18,21 +19,22 @@ from pathlib import Path
 # 此脚本会安装进任意技术栈的项目，不能在 tools/ 下留下未被忽略的 Python 缓存。
 sys.dont_write_bytecode = True
 import agents_status as board
+from agents_policy import effective_policy, check_task_branch, validate_policy
 
 
 class ConflictError(ValueError):
     pass
 
 
-def git(root: Path, *args: str) -> str:
+def git(root: Path, *args: str, raw: bool = False) -> str:
     executable = board.resolve_git()
     if not executable:
         raise ValueError("Git 不可用，无法核对工作区")
-    result = subprocess.run([executable, *args], cwd=str(root), capture_output=True,
-                            text=True, encoding="utf-8", errors="replace", timeout=20)
+    result = subprocess.run([executable, *args], cwd=str(root), capture_output=True, timeout=20)
     if result.returncode:
-        raise ValueError(result.stderr.strip() or "Git 检查失败")
-    return result.stdout.strip()
+        raise ValueError(result.stderr.decode("utf-8", errors="replace").strip() or "Git 检查失败")
+    output = result.stdout.decode("utf-8", errors="strict" if raw else "replace")
+    return output if raw else output.strip()
 
 
 def safe_path(root: Path, relative: str) -> Path:
@@ -193,8 +195,8 @@ def handoff_note(root: Path, session_id: str, summary: str) -> str:
     return path.relative_to(root).as_posix()
 
 
-def close_handoffs(root: Path, record: dict, session_id: str, reply: str) -> list[str]:
-    """只回执本会话生成的交接条；普通问题、他人问题及人类指令不自动作答。"""
+def handoff_updates(root: Path, record: dict, session_id: str, reply: str) -> list[tuple[Path, str]]:
+    """只准备本会话的交接回执，完成校验后由调用方写入。"""
     relative = record.get("handoff_inbox", "")
     if relative:
         candidate = safe_path(root, relative.replace("\\", "/"))
@@ -215,9 +217,259 @@ def close_handoffs(root: Path, record: dict, session_id: str, reply: str) -> lis
         if board.status_word(fields.get("status", "")) == "open":
             content = put_fields(content, {"status": "answered", "answered": datetime.now().strftime("%Y-%m-%d %H:%M")})
             pending.append((path, content.rstrip() + "\n\n" + reply + "\n"))
+    return pending
+
+
+def close_handoffs(root: Path, record: dict, session_id: str, reply: str) -> list[str]:
+    """普通问题、他人问题及人类指令不自动作答。"""
+    pending = handoff_updates(root, record, session_id, reply)
     for path, content in pending:
         board._write_lf_atomic(path, content)
     return [path.relative_to(root).as_posix() for path, _content in pending]
+
+
+def digest(value) -> str:
+    data = value if isinstance(value, bytes) else json.dumps(value, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(data).hexdigest()
+
+
+PLAN_ID = r"T-\d{8}-\d{4}-[a-f0-9]{8}"
+SESSION_ID = r"[A-Za-z0-9][A-Za-z0-9_-]{0,100}"
+SHA256 = r"[a-f0-9]{64}"
+TAKEOVER_LIMIT = 8 * 1024 * 1024
+
+
+def takeover_path(root: Path, relative: str) -> Path:
+    path = safe_path(root, relative)
+    if path.is_symlink() or path.resolve() != path:
+        raise ValueError(f"接管涉及链接路径 {relative}，先人工核对")
+    return path
+
+
+def takeover_snapshot(roots: list[Path], session_id: str) -> dict:
+    if not re.fullmatch(SESSION_ID, session_id):
+        raise ValueError("无效的会话 ID")
+    locations = [takeover_path(root, f".agents/sessions/{session_id}.md") for root in roots]
+    locations = [path for path in locations if path.is_file()]
+    if len(locations) != 1:
+        raise ValueError("会话不存在或多个工作区存在相同 ID，先人工核对")
+    path = locations[0]
+    root = path.parents[2]
+    record = board.parse_kv(path)
+    if any(not record.get(key, "").strip() for key in ("agent", "branch", "status")):
+        raise ValueError("原会话缺少所有者、分支或状态，先人工核对")
+    index_lock = Path(git(root, "rev-parse", "--git-path", "index.lock"))
+    if not index_lock.is_absolute():
+        index_lock = root / index_lock
+    if index_lock.exists():
+        raise ConflictError("原工作区有 Git index.lock，先确认 Git 进程已经停止")
+    claimed, invalid = board.parse_claimed_files(record.get("files", ""))
+    if invalid:
+        raise ValueError("原会话文件范围无效，不能生成可执行接管计划")
+    changed = git(root, "diff", "--no-ext-diff", "--no-textconv", "--name-only", "-z", "HEAD", "--", raw=True)
+    untracked = git(root, "ls-files", "--others", "--exclude-standard", "-z", raw=True)
+    names = sorted(set(filter(None, (changed + untracked).split("\0"))))
+    if len(names) > 100:
+        raise ValueError("改动文件超过 100 个，先人工核对，不自动收回")
+    fingerprints, total, last_file_activity = {}, 0, 0.0
+    for name in names:
+        item = takeover_path(root, name)
+        if not item.exists():
+            fingerprints[name] = "deleted"
+        elif not item.is_file():
+            raise ValueError(f"改动含目录或子模块 {name}，先人工核对")
+        else:
+            before = item.stat()
+            if total + before.st_size > TAKEOVER_LIMIT:
+                raise ValueError("改动内容超过 8 MiB，先人工核对")
+            with item.open("rb") as stream:
+                content = stream.read(TAKEOVER_LIMIT - total + 1)
+            after = item.stat()
+            total += len(content)
+            if total > TAKEOVER_LIMIT or before.st_mtime_ns != after.st_mtime_ns or before.st_size != after.st_size:
+                raise ValueError("检查时文件继续增长，停止生成计划")
+            fingerprints[name] = {"sha256": digest(content), "mtime_ns": str(after.st_mtime_ns)}
+            last_file_activity = max(last_file_activity, after.st_mtime)
+    stat = path.stat()
+    return {"session_id": session_id, "workspace": str(root), "owner": record.get("agent"),
+            "recorded_branch": record.get("branch"), "branch": git(root, "branch", "--show-current"),
+            "head": git(root, "rev-parse", "HEAD"), "status": record.get("status"),
+            "heartbeat": record.get("heartbeat", ""), "files": claimed,
+            "record_sha256": digest(path.read_bytes()), "mtime_ns": str(stat.st_mtime_ns),
+            "mtime": stat.st_mtime, "last_file_activity": last_file_activity,
+            "git_status": git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all", raw=True),
+            "index_sha256": digest(git(root, "ls-files", "--stage", "-z", raw=True)),
+            "working_files": fingerprints}
+
+
+def takeover_blockers(snapshot: dict) -> list[str]:
+    blockers = []
+    if board.status_word(snapshot["status"]) in board.CLOSED_WORDS:
+        blockers.append("原会话已经结束，无需收回")
+    if snapshot["branch"] != snapshot["recorded_branch"]:
+        blockers.append("原工作区分支已改变，先调查")
+    heartbeat = board.valid_heartbeat(snapshot["heartbeat"], datetime.now())
+    if heartbeat is None:
+        blockers.append("原会话心跳无效，不能自动认定失联")
+    last_activity = max(snapshot["mtime"], snapshot["last_file_activity"],
+                        heartbeat.timestamp() if heartbeat else snapshot["mtime"])
+    if time.time() - last_activity <= 15 * 60:
+        blockers.append("心跳、会话或改动文件在 15 分钟内更新，不能认定原会话失联")
+    return blockers
+
+
+def declaration_name(plan_id: str) -> str:
+    return ".agents/inbox/Q-" + plan_id[2:] + "-takeover.md"
+
+
+def valid_timestamp(value) -> bool:
+    return type(value) in (int, float) and 0 <= value <= 253402300799
+
+
+def read_takeover_plan(primary: Path, plan_id: str) -> tuple[Path, dict]:
+    if not re.fullmatch(PLAN_ID, plan_id):
+        raise ValueError("无效的接管计划 ID")
+    path = takeover_path(primary, f".agents/takeovers/{plan_id}.json")
+    with path.open("rb") as stream:
+        data = stream.read(1024 * 1024 + 1)
+    if len(data) > 1024 * 1024:
+        raise ValueError("接管计划过大，先人工核对")
+    plan = json.loads(data.decode("utf-8"))
+    required = {"schema_version", "id", "status", "requester", "reason", "created_at", "snapshot",
+                "policy", "declaration", "declaration_sha256"}
+    if (not isinstance(plan, dict) or not required.issubset(plan)
+            or type(plan["schema_version"]) is not int or plan["schema_version"] != 1
+            or plan["id"] != plan_id or plan["status"] not in ("pending", "applying", "applied", "cancelled")
+            or not isinstance(plan["requester"], str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,31}", plan["requester"])
+            or not isinstance(plan["reason"], str)
+            or not valid_timestamp(plan["created_at"])
+            or plan["created_at"] <= 0 or plan["declaration"] != declaration_name(plan_id)
+            or not isinstance(plan["declaration_sha256"], str) or not re.fullmatch(SHA256, plan["declaration_sha256"])):
+        raise ValueError("接管计划结构无效，未修改原会话")
+    one_line(plan["reason"], "接管理由")
+    validate_policy(plan["policy"])
+    snapshot = plan["snapshot"]
+    strings = ("session_id", "workspace", "owner", "recorded_branch", "branch", "head", "status",
+               "heartbeat", "record_sha256", "mtime_ns", "git_status", "index_sha256")
+    if (not isinstance(snapshot, dict) or any(not isinstance(snapshot.get(k), str) for k in strings)
+            or not re.fullmatch(SESSION_ID, snapshot["session_id"])
+            or not isinstance(snapshot.get("files"), list) or not all(isinstance(p, str) for p in snapshot["files"])
+            or not isinstance(snapshot.get("working_files"), dict)
+            or any(not valid_timestamp(snapshot.get(k)) for k in ("mtime", "last_file_activity"))):
+        raise ValueError("接管快照结构无效，未修改原会话")
+    return path, plan
+
+
+def read_declaration(primary: Path, plan: dict) -> tuple[Path, str]:
+    path = takeover_path(primary, plan["declaration"])
+    notice = path.read_text(encoding="utf-8")
+    fields = board.parse_kv(path)
+    if (not notice.startswith(f"# 接管声明：{plan['snapshot']['session_id']}\n")
+            or fields.get("from") != plan["requester"] + "-takeover"
+            or fields.get("takeover_plan") != plan["id"] or fields.get("to") != "any"):
+        raise ValueError("声明不属于此接管计划，拒绝修改")
+    return path, notice
+
+
+def execute_takeover(args, root: Path, roots: list[Path], policy) -> dict:
+    if args.cmd == "takeover-inspect":
+        snapshot = takeover_snapshot(roots, args.session)
+        return {"ok": True, "snapshot": snapshot, "blockers": takeover_blockers(snapshot),
+                "notice": "这里只读核对，不代表获准接管。"}
+    actor = one_line(args.agent, "执行者")
+    if not re.fullmatch(r"[a-z][a-z0-9-]{0,31}", actor):
+        raise ValueError("执行者使用小写平台名")
+    primary = roots[0]
+    with coordination_lock(primary):
+        if effective_policy(root, primary) != policy:
+            raise ConflictError("等待期间项目策略发生变化，请重新检查")
+        if args.cmd == "takeover-plan":
+            snapshot = takeover_snapshot(roots, args.session)
+            pending = set(pending_human_inbox(roots, actor, args.session))
+            pending.update(pending_human_inbox(roots, snapshot["owner"], args.session))
+            acknowledge_for_call(sorted(pending), getattr(args, "ack_inbox", None))
+            blockers = takeover_blockers(snapshot)
+            if blockers:
+                raise ConflictError("；".join(blockers))
+            reason = one_line(args.reason, "接管理由")
+            directory = takeover_path(primary, ".agents/takeovers")
+            for old_file in directory.glob("T-*.json"):
+                _path, old = read_takeover_plan(primary, old_file.stem)
+                if old["status"] in ("pending", "applying") and old["snapshot"]["session_id"] == args.session:
+                    raise ConflictError(f"已有待处理计划 {old_file.stem}，先检查或取消，不重复发布声明")
+            plan_id = "T-" + datetime.now().strftime("%Y%m%d-%H%M") + "-" + uuid.uuid4().hex[:8]
+            relative = declaration_name(plan_id)
+            declaration = takeover_path(primary, relative)
+            if declaration.exists() or (directory / (plan_id + ".json")).exists():
+                raise ConflictError("计划编号碰撞，请重新生成；未覆盖已有文件")
+            if takeover_snapshot(roots, args.session) != snapshot:
+                raise ConflictError("检查期间原会话或文件正在变化，停止生成计划")
+            body = (f"# 接管声明：{args.session}\n\n- from: {actor}-takeover\n- to: any\n- status: open\n"
+                    f"- takeover_plan: {plan_id}\n"
+                    f"- created: {datetime.now():%Y-%m-%d %H:%M}\n\n## 说明\n\n{reason}\n\n"
+                    f"原会话：{args.session}；分支：{snapshot['branch']}；提交：{snapshot['head']}。\n"
+                    "仅申请收回协作占用。至少等待 5 分钟、无人回复、用户明确确认且快照仍一致后才能执行。\n\n## 回复\n")
+            board._write_lf_atomic(declaration, body)
+            plan = {"schema_version": 1, "id": plan_id, "status": "pending", "requester": actor,
+                    "reason": reason, "created_at": time.time(), "snapshot": snapshot, "policy": policy,
+                    "declaration": relative, "declaration_sha256": digest(declaration.read_bytes())}
+            board._write_lf_atomic(directory / (plan_id + ".json"), json.dumps(plan, ensure_ascii=False, indent=2) + "\n")
+            return {"ok": True, "plan": plan_id, "snapshot": snapshot, "declaration": relative,
+                    "earliest_apply": datetime.fromtimestamp(plan["created_at"] + 300).isoformat(timespec="seconds"),
+                    "notice": "计划未执行。先核对进程、改动和声明回复，并取得用户对本计划的明确确认。"}
+        plan_path, plan = read_takeover_plan(primary, args.plan)
+        if plan["requester"] != actor:
+            raise ValueError("计划结构或执行者不匹配")
+        if plan["status"] != "pending":
+            raise ValueError("计划已执行、执行中或已取消，不可重复使用；执行中断时先人工核对审计记录")
+        declaration, notice = read_declaration(primary, plan)
+        if args.cmd == "takeover-cancel":
+            reason = one_line(args.reason, "取消原因")
+            plan.update(status="cancelled", cancelled_reason=reason)
+            board._write_lf_atomic(declaration, put_fields(notice, {"status": "cancelled"}) + "\n计划已取消：" + reason + "\n")
+        else:
+            approval = one_line(args.approval_note, "实际用户确认的记录")
+            target_id = plan["snapshot"]["session_id"]
+            if args.confirm_session != target_id:
+                raise ValueError("再次输入的原会话 ID 与计划不一致")
+            if time.time() < plan["created_at"] + 300:
+                raise ConflictError("声明后尚未满 5 分钟，不能执行")
+            pending = set(pending_human_inbox(roots, actor, target_id))
+            pending.update(pending_human_inbox(roots, plan["snapshot"]["owner"], target_id))
+            acknowledge_for_call(sorted(pending), getattr(args, "ack_inbox", None))
+            if digest(declaration.read_bytes()) != plan["declaration_sha256"]:
+                raise ConflictError("接管声明出现回复或被修改，先人工协调，不忽略异议")
+            snapshot = takeover_snapshot(roots, target_id)
+            if snapshot != plan["snapshot"] or effective_policy(root, primary) != plan["policy"]:
+                raise ConflictError("原会话、Git 状态或项目策略已变化，旧计划失效")
+            blockers = takeover_blockers(snapshot)
+            if blockers:
+                raise ConflictError("；".join(blockers))
+            source = Path(snapshot["workspace"])
+            path = takeover_path(source, f".agents/sessions/{target_id}.md")
+            record = board.parse_kv(path)
+            handoffs = handoff_updates(source, record, target_id, "按人工确认收回协作占用，计划 " + args.plan)
+            for candidate, _text in handoffs:
+                takeover_path(source, candidate.relative_to(source).as_posix())
+            takeover_path(source, f".agents/worklog/{datetime.now():%Y-%m-%d}.md")
+            updated = put_fields(path.read_text(encoding="utf-8"), {"status": "closed", "closed_by": actor,
+                                 "closed_at": datetime.now().isoformat(timespec="seconds"),
+                                 "closed_reason": "按人工确认收回占用，未声称原任务或测试完成", "takeover_plan": args.plan})
+            if takeover_snapshot(roots, target_id) != snapshot or digest(declaration.read_bytes()) != plan["declaration_sha256"]:
+                raise ConflictError("最终检查发现会话、Git 或声明变化，未收回占用")
+            # 多文件更新无法整体原子提交；先落审计状态，中断后必须人工核对，不能盲目重复执行。
+            plan.update(status="applying", approval_note=approval, applying_at=time.time())
+            board._write_lf_atomic(plan_path, json.dumps(plan, ensure_ascii=False, indent=2) + "\n")
+            for candidate, content in handoffs:
+                board._write_lf_atomic(candidate, content)
+            board._write_lf_atomic(path, updated)
+            notice = put_fields(notice, {"status": "answered"})
+            board._write_lf_atomic(declaration, notice + "\n人工确认后已收回占用；原提交和工作文件均保留。\n")
+            plan.update(status="applied", applied_at=time.time(), approval_note=approval)
+            append_worklog(source, actor, snapshot["branch"], f"人工确认收回 {target_id} 的占用，计划 {args.plan}；保留提交 {snapshot['head']} 与全部工作文件。")
+        board._write_lf_atomic(plan_path, json.dumps(plan, ensure_ascii=False, indent=2) + "\n")
+        return {"ok": True, "plan": args.plan, "status": plan["status"], "base_commit": plan["snapshot"]["head"],
+                "notice": "没有切换、删除或重建 Git 分支。后续从原提交建立自己的任务分支，并保留未提交文件后重新登记。"}
 
 
 def execute(args: argparse.Namespace) -> dict:
@@ -227,21 +479,36 @@ def execute(args: argparse.Namespace) -> dict:
         raise ValueError("项目尚未安装会话目录，请先运行安装器")
     roots = worktree_roots(root)
     branch = git(root, "branch", "--show-current")
+    policy = effective_policy(root, roots[0])
+    if args.cmd.startswith("takeover-"):
+        return execute_takeover(args, root, roots, policy)
     files = normalize_files(root, args.files or []) if hasattr(args, "files") else []
     if args.cmd == "check":
         conflicts = check_conflicts(root, branch, files, sessions_in(roots), args.session)
         pending = pending_human_inbox(roots, args.agent, args.session)
+        try:
+            check_task_branch(branch, policy)
+            branch_ok = True
+        except ValueError as exc:
+            branch_ok = False
+            if files:
+                conflicts.append(str(exc))
         return {"ok": not conflicts and not pending, "branch": branch, "files": files,
-                "conflicts": conflicts, "human_inbox": pending}
+                "conflicts": conflicts, "human_inbox": pending, "policy": policy,
+                "task_branch_allowed": branch_ok}
     agent = one_line(args.agent, "平台名").lower()
     if not re.fullmatch(r"[a-z][a-z0-9-]{0,31}", agent):
         raise ValueError("平台名使用小写英文、数字或连字符")
-    if not branch or branch in ("main", "master", "develop"):
-        raise ValueError("请先切到任务分支；会话工具不会创建分支或在共享主干登记写任务")
+    if args.cmd in ("start", "resume") or (args.cmd == "heartbeat" and args.files is not None):
+        check_task_branch(branch, policy)
+    elif not branch:
+        raise ValueError("当前没有有效分支，先排查工作区状态")
     with coordination_lock(roots[0]):
         # 等待锁期间可能有人切分支，写入前再次核对。
         if git(root, "branch", "--show-current") != branch:
             raise ConflictError("等待期间工作区分支发生变化，停止写入")
+        if effective_policy(root, roots[0]) != policy:
+            raise ConflictError("等待期间项目策略发生变化，请重新检查")
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
         if args.cmd == "start":
             task = one_line(args.task, "任务")
@@ -357,6 +624,22 @@ def main() -> int:
             sub.add_argument("--summary", required=True)
         if name == "finish":
             sub.add_argument("--tests", required=True, help="实际测试结果；未测也要如实说明")
+    for name in ("takeover-inspect", "takeover-plan", "takeover-apply", "takeover-cancel"):
+        sub = commands.add_parser(name, help="人工接管：先检查与声明，再确认执行；不操作 Git 分支")
+        sub.add_argument("--json", action="store_true")
+        if name in ("takeover-inspect", "takeover-plan"):
+            sub.add_argument("session", help="原会话 ID")
+        else:
+            sub.add_argument("plan", help="本机接管计划 ID")
+        if name != "takeover-inspect":
+            sub.add_argument("--agent", required=True)
+        if name in ("takeover-plan", "takeover-cancel"):
+            sub.add_argument("--reason", required=True)
+        if name in ("takeover-plan", "takeover-apply"):
+            sub.add_argument("--ack-inbox", nargs="+")
+        if name == "takeover-apply":
+            sub.add_argument("--confirm-session", required=True, help="再次输入原会话 ID")
+            sub.add_argument("--approval-note", required=True, help="记录实际取得的用户确认；此参数本身不是授权")
     args = parser.parse_args()
     rc = 0
     try:

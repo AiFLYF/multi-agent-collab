@@ -12,6 +12,7 @@
   var clear = document.getElementById('platform-clear');
   var search = document.getElementById('platform-search');
   var empty = document.getElementById('platform-empty');
+  var workflow = document.getElementById('install-workflow');
 
   data.platforms.forEach(function (platform) {
     var label = document.createElement('label');
@@ -42,14 +43,19 @@
     var selection = selected.length
       ? '本次启用以下平台：' + selected.join(',') + '。使用 --platforms ' + selected.join(',') + '；已有选择保留，无需再询问平台。'
       : data.defaultSelection;
-    prompt.textContent = data.promptTemplate.replace('{{PLATFORM_SELECTION}}', selection);
+    var flow = workflow.value;
+    var workflowSelection = flow
+      ? '本次采用 ' + (flow === 'git-flow' ? 'Git Flow（develop 基线）' : 'GitHub Flow（main 基线）') + '，安装时使用 --workflow ' + flow + '。先核对项目现有约定；若冲突再说明，不自动建立或修改远端分支。'
+      : data.defaultWorkflow;
+    prompt.textContent = data.promptTemplate.replace('{{PLATFORM_SELECTION}}', selection).replace('{{WORKFLOW_SELECTION}}', workflowSelection);
     var flag = selected.length ? ' --platforms ' + selected.join(',') : '';
+    var workflowFlag = flow ? ' --workflow ' + flow : '';
     command.textContent = [
       '# 仅第一次下载时运行；已经存在则核对后复用',
       'git clone https://github.com/AiFLYF/multi-agent-collab "$HOME/multi-agent-collab"',
       '',
       selected.length ? '# 在目标项目目录运行；需要预览可在安装命令末尾加 --dry-run' : '# 在目标项目目录运行，首次会询问平台；脚本执行请明确 --platforms',
-      'python "$HOME/multi-agent-collab/install.py" install .' + flag,
+      'python "$HOME/multi-agent-collab/install.py" install .' + flag + workflowFlag,
       'python "$HOME/multi-agent-collab/install.py" doctor .',
       '',
       '# 追加平台或刷新入口，已有选择保留',
@@ -78,6 +84,7 @@
     empty.hidden = count > 0;
   }
   search.addEventListener('input', filterPlatforms);
+  workflow.addEventListener('change', update);
   clear.addEventListener('click', function () {
     Array.prototype.forEach.call(picker.querySelectorAll('input'), function (el) { el.checked = false; });
     update();

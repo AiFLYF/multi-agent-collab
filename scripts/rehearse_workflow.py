@@ -172,6 +172,35 @@ class Rehearsal:
         self.run("卸载预览", sys.executable, installer, "uninstall", first, "--purge-files", "--dry-run")
         self.check("卸载预览不丢协作记录", note.read_bytes() == original)
 
+        # 第二项目用单主干流程，证明不依赖 develop；仅操作本次创建的隔离仓库。
+        self.run("为第二项目选择 GitHub Flow", sys.executable, installer, "install", second, "--workflow", "github-flow")
+        self.run("建立第二项目 main 基线", "git", "switch", "-c", "main", cwd=second)
+        (second / "README.md").write_text("# 单主干演练项目\n", encoding="utf-8")
+        self.run("暂存第二项目演练基线", "git", "add", "README.md", cwd=second)
+        self.run("提交第二项目演练基线", "git", "commit", "-q", "-m", "test: seed single-main project", cwd=second)
+        self.run("创建策略允许的任务分支", "git", "switch", "-c", "codex/policy-rehearsal", cwd=second)
+        policy = self.session("读取实际生效的项目策略", second, "check", "--files", "README.md")
+        self.check("单主干策略允许 codex 前缀", policy["policy"]["base_branch"] == "main" and policy["task_branch_allowed"])
+        cli = json.loads(self.run("检查已选客户端就绪信息", sys.executable, installer, "clients", second, "--json"))
+        self.check("客户端探测不冒充新对话验证", len(cli["clients"]) == 2 and all(not row["session_verified"] for row in cli["clients"]))
+        stale = self.session("登记接管演练会话", second, "start", "--agent", "qwen", "--task", "接管流程演练", "--files", "README.md")
+        session_path = Path(stale["file"])
+        old_text = re.sub(r"(?m)^- heartbeat:.*$", "- heartbeat: 2000-01-01 00:00", session_path.read_text(encoding="utf-8"))
+        kit.write_lf(session_path, old_text)
+        old_time = time.time() - 1800
+        os.utime(session_path, (old_time, old_time))
+        inspected = self.session("只读核对失联快照", second, "takeover-inspect", stale["id"])
+        self.check("演练快照可供人工核对", not inspected["blockers"])
+        planned = self.session("发布演练接管计划", second, "takeover-plan", stale["id"], "--agent", "gemini", "--reason", "隔离夹具中的失联会话")
+        rejected = self.session("真实命令拒绝跳过等待", second, "takeover-apply", planned["plan"], "--agent", "gemini",
+                                "--confirm-session", stale["id"], "--approval-note", "仅验证等待门禁的隔离测试", expected=1)
+        self.check("阻止原因确为未满五分钟", "5 分钟" in rejected["error"])
+        self.session("取消接管并保留记录", second, "takeover-cancel", planned["plan"], "--agent", "gemini", "--reason", "演练结束，原会话继续")
+        self.check("取消未修改原会话", session_path.read_text(encoding="utf-8") == old_text)
+        self.session("原会话完成演练收尾", second, "finish", stale["id"], "--agent", "qwen", "--summary", "接管检查和取消已验证",
+                     "--tests", "真实 CLI 检查、等待拒绝、取消保留均通过；未执行强制接管")
+        self.run("第二项目协作记录闭环", sys.executable, second / "tools/agents_status.py", "--brief", cwd=second)
+
     def cleanup(self):
         if self.server is not None:
             self.server.terminate()
@@ -188,7 +217,8 @@ class Rehearsal:
     def report(self, path, error):
         text = ["# 协作流程实际演练报告", "", f"- 时间：{datetime.now().astimezone().isoformat(timespec='seconds')}",
                 f"- 结果：{'未通过' if error else '通过'}", f"- 检查数：{len(self.steps)}", f"- Python：{sys.version.split()[0]}",
-                "- 范围：真实本地 clone、Git/worktree、安装器、会话工具、HTTP 看板、业务测试和隔离 bare 远端。",
+                "- 范围：真实本地 clone、Git/worktree、安装器、项目策略、会话/接管工具、HTTP 看板、业务测试和隔离 bare 远端。",
+                "- 接管：真实 CLI 验证 inspect/plan/等待拒绝/cancel；成功 apply 的时间边界由受控时钟回归验证。",
                 "- 边界：不创建真实 GitHub PR，不调用模型，不代替各平台的新会话加载验收。", ""]
         if error:
             text += ["## 断点", "", str(error), ""]

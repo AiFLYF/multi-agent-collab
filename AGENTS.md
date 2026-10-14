@@ -1,4 +1,4 @@
-# AGENTS.md — 多 Agent 协作总章（Git Flow + 本机共享记忆）
+# AGENTS.md — 多 Agent 协作总章（项目分支策略 + 本机共享记忆）
 
 > 本文件是当前项目内所有 AI 编码 agent 的**统一协作规则**。本文件、`CLAUDE.md`、`.agents/`、
 > `.agent/`、`.claude/`、`.trae/`、`.workbuddy-ai/`、`.workbuddy/`、`tools/agents_status.py`
@@ -21,6 +21,11 @@
 
 ## 1. 分支铁律（项目代码走这套；协作体系文件不参与 git）
 
+新对话先读 `.agents/POLICY.md`，写任务用 `agents_session.py check` 核对实际策略。
+安装时可明确选择 Git Flow、GitHub Flow 或 custom；未配置的旧项目默认使用下表的 Git Flow。
+已配置时，任务前缀、开发基线和 PR 目标以项目策略为准；下表仅适用于 Git Flow。
+策略不能放开主干直推、强推、历史改写或测试门禁，也不代表授权修改远端分支结构。
+
 | 分支 | 用途 | 允许的合并来源 |
 |---|---|---|
 | `main` | 生产分支 | 仅 `release/*`、`hotfix/*` |
@@ -30,7 +35,7 @@
 
 **禁止操作（无例外）**：
 
-- 禁直接 commit/push 到 `main`/`develop`（走 PR）；禁 `push --force` 到共享分支、历史改写
+- 禁直接 commit/push 到受保护分支（始终含 `main`/`master`/`develop` 和所选基线，走 PR）；禁 `push --force` 到共享分支、历史改写
 - 禁删除/移动/重建 `.git`；禁删别的 agent 的分支、stash、session 记录
 - 禁测试未过就提交/推送/开 PR；禁 `git add -A`/`git add .`，只 add 本任务相关文件
 - 禁提交第 8 节的本机私有文件（忽略失效先排查，不得 `git add -f`）
@@ -56,9 +61,9 @@ blocked 恢复用 `resume`，已结束的会话不能复活。场景选择和完
    - 有 GitHub 远端时**必查 open PR**（`gh pr list --state open` 或看板 `--prs`）；其它托管平台按项目约定检查，本地仓库说明不适用
    - **判活三信号交叉**：看板 + 构建进程（`tasklist`/`ps`）+ `git reflog -8` 与文件 mtime；
      看板"无活跃"≠没人干活（不注册就隐形，手册 A1）。有活跃会话占同分支/同批文件就**不要抢**
-2. 新写任务从已确认的 `develop` 基线开始：`git switch develop` 后 `git pull --ff-only`。
+2. 新写任务从项目策略的已确认基线开始：`git switch <基线>` 后 `git pull --ff-only`（Git Flow 默认 `develop`）。
    继续原任务不要切走。基线不存在时报告分支结构、请用户决定，不擅自建立远端主干；可继续独立的只读检查和本地验证。
-3. `git switch -c feature/<任务名>`（小写英文+连字符），建完 `git rev-parse --verify feature/<名>`
+3. 按项目允许前缀新建任务分支，如 `git switch -c feature/<任务名>`（小写英文+连字符），建完 `git rev-parse --verify <分支>`
    复核（沙箱可能"成功"却没建出来，见 B13/B14）
 4. **注册会话**（纯本地）：优先用 `python tools/agents_session.py start --agent <平台> --task "任务" --files <文件或目录>`。
    保存返回的会话 ID；工具检查同工作区、分支和跨 worktree 文件占用，有冲突就停止。
@@ -69,7 +74,7 @@ blocked 恢复用 `resume`，已结束的会话不能复活。场景选择和完
    能编译要真编译、能跑要真跑，静态检查/预览不算验证（A3/A5）
    - 组合命令逐项检查退出码；前一步失败就停止依赖它的提交/推送，不用最后一条成功掩盖前面的失败
 7. 测试通过后只 add 本任务项目文件并 commit，运行 `git rev-parse --short HEAD` 复核；
-   再推送并 `gh pr create --base develop`（推送失败按 C1/C5/C8/C9；记忆文件不随 git 走）
+   再推送并 `gh pr create --base <基线>`（Git Flow 为 develop；推送失败按 C1/C5/C8/C9；记忆文件不随 git 走）
 8. **收尾（本地）**：用 `agents_session.py finish <会话ID> --agent <平台> --summary "总结" --tests "实际测试结果"`
    将自己的 session 置 `done` 并追加 worklog、回执自己的交接条；中途交接用 `handoff`，保留占用直到确认交接
 9. 每步用中文汇报四件套：**当前分支 / commit message / 变更文件 / 测试结果**
@@ -91,6 +96,9 @@ blocked 恢复用 `resume`，已结束的会话不能复活。场景选择和完
 | 平台列表 / 新增与同步 | `python <套件目录>/install.py platforms` / `… sync <项目> --platforms cursor` | 平台选择保存在 `.agents/install.json`；省略参数沿用 |
 | 登记 / 心跳 / 恢复 / 收尾 | `python tools/agents_session.py start\|heartbeat\|resume\|finish\|handoff --help` | 只更新自己的会话；支持 `--json` |
 | 文件占用检查 | `python tools/agents_session.py check --agent <平台> --files <范围> --json` | 返回 1 时先处理冲突或人类 inbox |
+| 项目分支策略 | 读 `.agents/POLICY.md`；`check --json` 报告实际策略 | 主 worktree 的 policy.json 为共同来源 |
+| 原会话失联 | `python tools/agents_session.py takeover-inspect <ID> --json` | 先只读；执行流程见 `.agents/TAKEOVER.md` |
+| 客户端检查 | `python <套件目录>/install.py clients <项目> --versions` | 只查 CLI 版本，新对话加载仍需实际验证 |
 | 报错怎么办 | 读 `.agents/TROUBLESHOOTING.md` | 按编号 A/B/C/D 查 |
 
 退出码：0 = 无告警，1 = 有失活会话/未答问题/未注册 worktree。参数以 `--help` 实际输出为准，不用背。
@@ -106,13 +114,15 @@ blocked 恢复用 `resume`，已结束的会话不能复活。场景选择和完
 会话 ID：`<agent>-<YYMMDD-HHMM>-<4位随机>`。
 
 - **心跳**：活跃期每 ≤15 分钟或每阶段更新（保存即生效）；跑 >15 分钟长任务前写明"预计 HH:MM 回来"。
-  超 15 分钟算失活；要接管先在 inbox 发接管声明、等 5 分钟无反对，从其分支切新分支，**保留并注明其全部提交**
+  超 15 分钟算失活，不自动释放。原会话失联时先 inspect 核对，再 plan 发布声明；等 5 分钟无反对、
+  用户确认具体计划且快照一致后才能 apply 收回占用，详见 `.agents/TAKEOVER.md`。随后从原提交切新分支，**保留并注明其全部提交和未提交文件**
 - 多 agent 并发写同一记忆文件取**并集**，只多不少
 - 编码会话声明 `files`（JSON 数组，目录以 `/` 结尾）；扩大范围前用 heartbeat 的 `--files` 重新检查。
   会话工具通过主 worktree `.agents/coordination.lock` 的系统锁串行登记，进程退出自动释放锁。
   失活或 blocked 会话的文件占用不会自动释放，不能借超时抢占。手工绕过登记仍可能覆盖文件。
 - 当前占用粒度为文件/目录，不支持“同一文件不同函数”自动并行；先拆分任务或串行交接。
 - `resume` 恢复自己的 blocked 会话并回执其交接条；`finish` 收尾时也回执关联交接，普通问题不能代答。
+- 人工接管将原会话置为 closed，表示收回占用，不表示原任务或测试完成；不删除原 session，也不自动切换分支。
 - 任何环境/工具/git 报错解决后，往 TROUBLESHOOTING.md 追加一条（现象/判断/真因/修复）
 
 **人类指令（用户从看板网页下达，优先级最高）**：inbox 里 `from: human*` 的文件，与 agent 留言同协议。
@@ -210,7 +220,7 @@ AGENTS.md  CLAUDE.md  .agents/  .agent/  .claude/  .trae/
 .workbuddy-ai/  .workbuddy/  tools/agents_status.py
 .cursor/rules/multi-agent-collab.mdc  .github/copilot-instructions.md
 .windsurf/rules/multi-agent-collab.md
-tools/agents_session.py  GEMINI.md  .qwen/QWEN.local.md
+tools/agents_session.py  tools/agents_policy.py  GEMINI.md  .qwen/QWEN.local.md
 .clinerules/multi-agent-collab.md  .roo/rules/00-multi-agent-collab.md
 .continue/rules/multi-agent-collab.md  .kiro/steering/multi-agent-collab.md
 ```

@@ -19,6 +19,10 @@ DEFAULT_SELECTION = (
     + "、".join(kit.ALL_PLATFORMS)
     + "。使用对应的 --platforms 名称；不要根据电脑里装过哪些软件就全部安装。"
 )
+DEFAULT_WORKFLOW = (
+    "读取项目现有分支约定与 .agents/policy.json；已有策略沿用，首次安装按已确认流程选择 git-flow、github-flow 或 custom。"
+    "只有 main 的项目可使用 github-flow；无法确认时只询问分支流程，不擅自建立 develop 或改变远端结构。"
+)
 
 
 def replace_block(text: str, name: str, content: str) -> str:
@@ -32,9 +36,9 @@ def replace_block(text: str, name: str, content: str) -> str:
 
 def outputs() -> dict[Path, str]:
     template = (ROOT / "templates/install-prompt.md").read_text(encoding="utf-8").strip()
-    if template.count("{{PLATFORM_SELECTION}}") != 1:
-        raise ValueError("安装提示词应包含一个 PLATFORM_SELECTION 占位符")
-    prompt = template.replace("{{PLATFORM_SELECTION}}", DEFAULT_SELECTION)
+    if any(template.count("{{" + name + "}}") != 1 for name in ("PLATFORM_SELECTION", "WORKFLOW_SELECTION")):
+        raise ValueError("安装提示词应各包含一个 PLATFORM_SELECTION 和 WORKFLOW_SELECTION 占位符")
+    prompt = template.replace("{{PLATFORM_SELECTION}}", DEFAULT_SELECTION).replace("{{WORKFLOW_SELECTION}}", DEFAULT_WORKFLOW)
     catalog = kit.platform_catalog()
     table = ["| `--platforms` 名称 | 平台 | 本套件安装的入口 |", "|---|---|---|"]
     for item in catalog:
@@ -51,8 +55,9 @@ def outputs() -> dict[Path, str]:
     if count != 1:
         raise ValueError("展示页必须包含一个 prompt-agent 代码块")
     data = {"version": kit.KIT_VERSION, "platforms": catalog,
-            "coreFiles": [dst for _src, dst, _zone in kit.CORE_FILES] + [kit.INSTALL_META],
-            "promptTemplate": template, "defaultSelection": DEFAULT_SELECTION}
+            "coreFiles": [dst for _src, dst, _zone in kit.CORE_FILES]
+                         + [kit.POLICY_FILE, kit.POLICY_DOC, kit.INSTALL_META],
+            "promptTemplate": template, "defaultSelection": DEFAULT_SELECTION, "defaultWorkflow": DEFAULT_WORKFLOW}
     script = "// 由 scripts/sync_install_docs.py 生成，请修改安装器或提示词模板。\n"
     script += "window.MAC_INSTALL = " + json.dumps(data, ensure_ascii=False, indent=2).replace("<", "\\u003c") + ";\n"
     return {readme_path: readme, index_path: index, ROOT / "site/assets/js/install-data.js": script}

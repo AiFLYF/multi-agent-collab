@@ -24,8 +24,26 @@
 2. 查看 `git status --short --branch`、看板、相关 inbox 和近 1–2 天日志。
 3. 准备写代码时，按总章 fetch、查 open PR、交叉检查构建进程与 reflog，确认没有重复任务。
 4. 有 GitHub 远端才查该仓库的 PR；本地仓库没有远端时说明这一点，不添加未知远端。
-5. Git Flow 的 `develop` 不存在时，先说明当前分支结构。不要擅自建立远端基线或把功能直接推入主干。
+5. 读取 `POLICY.md`；配置的基线不存在时，先说明当前分支结构。不要擅自建立远端基线或把功能直接推入主干。
    可以继续已经授权的只读审查、本地验证，或同一任务现有 feature 分支上的工作。
+
+## 按项目选择分支策略
+
+首次安装默认 Git Flow；已有安装沿用已保存策略。只有确认项目流程后才配置，不能为绕过占用或主干保护临时改策略。
+
+```text
+python <套件目录>/install.py install <项目> --workflow github-flow
+python <套件目录>/install.py install <项目> --workflow custom --base-branch trunk --task-prefixes task/,fix/ --protect-branches staging
+```
+
+- `git-flow`：默认基线 develop，允许 feature/、release/、hotfix/。
+- `github-flow`：默认基线 main，允许 feature/、fix/、docs/、chore/、codex/。
+- `custom`：明确基线和任务前缀。无论哪种策略，main、master、develop 和所选基线都受保护。
+- `.agents/policy.json` 保存配置，`POLICY.md` 是安装器生成的阅读入口。用安装命令修改，先 `--dry-run` 预览。
+- 在同一仓库的主 worktree 修改策略，再对其它 worktree 执行 sync。会话工具始终优先读主策略，不会用旧副本放行。
+- 已有会话仍可更新进度、handoff 或 finish；恢复写入和扩大文件范围要符合新策略。
+
+工具只校验登记，不会替 Git 设置服务器分支保护。PR 目标必须符合实际项目规则；策略不创建分支、不合并、不推送。
 
 ## 登记、扩大范围与心跳
 
@@ -64,7 +82,7 @@ start / resume 可用 `--ack-inbox Q-日期-序号.md` 显式确认已阅读并�
 这个参数只适用于当前仍待处理的指令，不能忽略暂停、取消、避让或授权边界；执行完再写结果并置 answered。
 
 如果要交给**另一个**执行者：先在交接条里明确下一步、分支和文件状态。原执行者确认移交后收尾，
-新执行者再登记自己的任务；原执行者失联时，按总章的声明、等待、保留提交流程处理。
+新执行者再登记自己的任务；原执行者失联时，按 [TAKEOVER.md](TAKEOVER.md) 检查、声明、等待与确认。
 不要冒用另一个 ID。`--agent` 的核对只是防误操作，不是身份认证或文件系统权限隔离。
 
 `done` 是协作状态，不是测试引擎的认证。`--tests` 记录的是调用者提供的结果，必须如实填写；

@@ -47,7 +47,7 @@
       </svg>
       MULTI-AGENT-COLLAB
     </span>
-    <span class="pre-ver">V1.5.1</span>
+    <span class="pre-ver">V1.6.0</span>
   </div>
 
   <div class="pre-mid">
@@ -109,7 +109,7 @@
   </nav>
   <div class="head-meta mono">
     <span class="live-dot" aria-hidden="true"></span>
-    <span>V1.5.1</span>
+    <span>V1.6.0</span>
     <span id="clock">--:--:--</span>
   </div>
   <button class="burger" id="burger" aria-label="打开菜单" aria-expanded="false"><span></span><span></span></button>
@@ -148,7 +148,7 @@
     <section class="sec hero" id="sec-0" data-sec="0" data-acc="#46E0FF">
       <canvas id="heroScene" role="img" aria-label="示例平台的 AI 信号流以各自的方式汇入中央共享黑板，人类指令以琥珀色脉冲抵达"></canvas>
 
-      <div class="hud hud-tl mono" aria-hidden="true">BOARD <b>.agents/</b> · SYNCED<br>RULEBOOK <b>AGENTS.md</b> v1.5.1</div>
+      <div class="hud hud-tl mono" aria-hidden="true">BOARD <b>.agents/</b> · SYNCED<br>RULEBOOK <b>AGENTS.md</b> v1.6.0</div>
       <div class="hud hud-tr mono" aria-hidden="true">TRACKS <b>06/06</b> ONLINE<br>NO-LOCK · HEARTBEAT 15M</div>
       <div class="hud hud-br mono" aria-hidden="true">CROSS-PLATFORM MULTI-AGENT · MIT<br>HEARTBEAT-NO-LOCK · PR-FIRST</div>
       <div class="console-log" id="heroLog" aria-hidden="true"></div>
@@ -157,7 +157,7 @@
         <div class="hero-copy">
           <p class="eyebrow mono">
             <span class="live-dot" aria-hidden="true"></span>
-            CROSS-PLATFORM MULTI-AGENT · 跨平台多 AI 协作 · v1.5.1 · MIT
+            CROSS-PLATFORM MULTI-AGENT · 跨平台多 AI 协作 · v1.6.0 · MIT
           </p>
           <h1 class="hero-title" aria-label="多个平台，一个项目。一块黑板，一套规矩。">
             <span class="ht-row"><span class="ht-line" style="--d:.05s">多个平台，一个项目。</span></span>
@@ -264,7 +264,7 @@
           <div class="cmp-row">
             <span class="cmp-k mono">干到一半失踪</span>
             <span class="cmp-a">窗口被关掉，没人知道它改到哪、下一步是什么</span>
-            <span class="cmp-b">会话注册 + 15 分钟心跳；想接管先声明、等 5 分钟，且保留前任全部提交</span>
+            <span class="cmp-b">会话注册 + 15 分钟心跳；失联接管先核对计划、等待与确认，保留原提交和工作文件</span>
           </div>
           <div class="cmp-row">
             <span class="cmp-k mono">想喊停</span>
@@ -321,7 +321,7 @@
           <div class="stat rv" style="--d:0s"><b><span data-count="15">0</span><em>+</em></b><p class="stat-cap">个 AI 协作会话的事故复盘</p></div>
           <div class="stat rv" style="--d:.06s"><b><span data-count="29">0</span></b><p class="stat-cap">条 TROUBLESHOOTING 排障手册</p></div>
           <div class="stat rv" style="--d:.12s"><b><span data-count="48">0</span></b><p class="stat-cap">项看板 selfcheck 内置断言</p></div>
-          <div class="stat rv" style="--d:.18s"><b><span data-count="60">0</span></b><p class="stat-cap">项回归用例（含并发登记与平台适配）</p></div>
+          <div class="stat rv" style="--d:.18s"><b><span data-count="89">0</span></b><p class="stat-cap">项回归用例（含策略、接管与平台适配）</p></div>
           <div class="stat rv" style="--d:.24s"><b><span data-count="3">0</span><em>×</em><span data-count="4">0</span></b><p class="stat-cap">操作系统 × Python 版本的 CI 矩阵</p></div>
           <div class="stat rv" style="--d:.3s"><b><span data-count="0">0</span></b><p class="stat-cap">第三方依赖 · Python 3.8+ 标准库</p></div>
         </div>
@@ -343,7 +343,7 @@
           <div class="inc-row">
             <span class="inc-sym">一个 AI 干到一半窗口被关掉，没人知道它改到哪、下一步是什么</span>
             <span class="inc-arrow">→</span>
-            <span class="inc-rule"><b>会话注册 + 心跳：</b>超 15 分钟算失联；接管要先在 inbox 声明、等 5 分钟无反对，并保留前任全部提交</span>
+            <span class="inc-rule"><b>会话注册 + 心跳：</b>超 15 分钟仍保留占用；接管需检查、声明、等待 5 分钟与用户确认，并保留原文件</span>
           </div>
           <div class="inc-row">
             <span class="inc-sym">每个平台的规则文件各写各的，换个 AI 工具就等于没有规则</span>
@@ -382,7 +382,7 @@
           <article class="rule rv" style="--d:.06s" data-tilt>
             <span class="rule-r">RULE 02 · 判活方式</span>
             <h3>心跳判活，系统锁保护登记</h3>
-            <p>系统锁仅串行保护状态更新，进程退出会自动释放。心跳超过 15 分钟算失活，<b>文件占用仍保留</b>；接管需先声明、等 5 分钟无反对，并保留前任提交。</p>
+            <p>系统锁仅串行保护状态更新，进程退出会自动释放。心跳超过 15 分钟算失活，<b>文件占用仍保留</b>；接管计划需等待与确认，快照变化就停止，保留原提交和工作文件。</p>
           </article>
           <article class="rule rv" style="--d:.12s" data-tilt>
             <span class="rule-r">RULE 03 · 交叉验证</span>
@@ -501,7 +501,7 @@ python tools/agents_status.py --brief
         <div class="install-config rv" style="--d:.18s">
           <div class="install-config-head">
             <div><p class="install-kicker mono">YOUR TOOLS / YOUR PROJECT</p><h3>这个项目，你用哪些 AI？</h3></div>
-            <button class="install-clear mono" id="platform-clear" type="button">清空选择</button>
+            <button class="install-clear mono" id="platform-clear" type="button">清空平台选择</button>
           </div>
           <label class="platform-search-label" for="platform-search">查找平台<span class="mono">支持名称或命令名</span></label>
           <input id="platform-search" class="platform-search" type="search" placeholder="例如 Codex、Gemini、Cline" autocomplete="off">
@@ -509,6 +509,13 @@ python tools/agents_status.py --brief
           <fieldset id="platform-picker" class="platform-picker">
             <legend class="sr-only">选择当前项目使用的平台，可多选</legend>
           </fieldset>
+          <label class="platform-search-label" for="install-workflow">项目分支流程<span>与项目已有约定保持一致</span></label>
+          <select id="install-workflow" class="platform-search">
+            <option value="">沿用已配置策略；初装默认 Git Flow</option>
+            <option value="git-flow">Git Flow · develop 基线</option>
+            <option value="github-flow">GitHub Flow · main 基线</option>
+          </select>
+          <p class="install-summary">流程不明确时，提示词会先确认。自定义基线和前缀可通过安装器设置。</p>
           <noscript><p>平台选择器需要 JavaScript；下方通用提示词会让 AI 先确认你使用的平台。</p></noscript>
           <p id="install-summary" class="install-summary" role="status" aria-live="polite">未选平台时，提示词会让 AI 先确认你正在使用的平台。</p>
           <details class="install-files">
@@ -533,12 +540,13 @@ python tools/agents_status.py --brief
 
 1. 检查 Python 3.8+ 和 Git，确认当前项目的 Git 根目录并记下绝对路径 TARGET。缺依赖时说明，不自行安装软件或 git init。
 2. 优先根据当前对话确认正在使用的平台并告诉我；无法确认时先问我使用哪些平台（可多选）：codex、claude、opencode、pi、trae、workbuddy、cursor、copilot、windsurf、gemini、qwen、cline、roo、continue、kiro。使用对应的 --platforms 名称；不要根据电脑里装过哪些软件就全部安装。
+   读取项目现有分支约定与 .agents/policy.json；已有策略沿用，首次安装按已确认流程选择 git-flow、github-flow 或 custom。只有 main 的项目可使用 github-flow；无法确认时只询问分支流程，不擅自建立 develop 或改变远端结构。
 3. 套件默认放在用户主目录的 multi-agent-collab：Windows 为 $HOME\multi-agent-collab，macOS/Linux 为 ~/multi-agent-collab。这里是可供多个项目复用的源码目录，不要 clone 到 TARGET 内。
    目录不存在时执行 git clone https://github.com/AiFLYF/multi-agent-collab "&lt;用户主目录&gt;/multi-agent-collab"。已存在时核对 origin 和 install.py 后复用；来源不符或有本地修改时保留现场并说明，不覆盖、不删除、不重置。只有确认工作区干净且配置了上游后，才用 git pull --ff-only 更新。
-4. 使用绝对路径运行 python "&lt;套件目录&gt;/install.py" install "&lt;TARGET&gt;" --platforms &lt;已选名称&gt; --dry-run。核对文件清单后执行同一条命令去掉 --dry-run；不要默认 all。只选原生平台时不生成其它平台配置。
+4. 使用绝对路径运行 python "&lt;套件目录&gt;/install.py" install "&lt;TARGET&gt;" --platforms &lt;已选名称&gt; --dry-run；首次安装附加已确认的 --workflow 参数，自定义流程还要 --base-branch 和 --task-prefixes。核对文件清单与分支策略后执行同一条命令去掉 --dry-run；不要默认 all。只选原生平台时不生成其它平台配置。
 5. 安装器负责把本机协作路径写入 .git/info/exclude。若已有规则被 Git 跟踪或忽略无法生效，报告具体文件和原因，不自动取消跟踪、不改写项目 .gitignore、不绕过检查。
 6. 根据项目的真实配置填写生成的 AGENTS.md 第 6 节；选了 Claude 再填写 CLAUDE.md 速览。保留已有定制、会话、日志和备份。若改过总章，再运行 python "&lt;套件目录&gt;/install.py" sync "&lt;TARGET&gt;" 刷新已选入口。
-7. 执行 python "&lt;套件目录&gt;/install.py" doctor "&lt;TARGET&gt;"，并核对 git status --short。汇报套件复用路径、已选平台、生成文件和体检结果；解释 WARN，不能把未验证项说成成功。
+7. 执行 python "&lt;套件目录&gt;/install.py" doctor "&lt;TARGET&gt;"，并核对 git status --short；可用 clients "&lt;TARGET&gt;" --versions 检查 CLI 可用性，不启动模型。汇报套件复用路径、已选平台、项目分支策略、生成文件和体检结果；解释 WARN，版本查询不代表新对话已加载规则。
 8. 告诉我新开对话验证：让 agent 读取 .agents/START_HERE.md，报告当前分支、看板和 inbox 的实际结果。之后增加平台用 sync "&lt;TARGET&gt;" --platforms &lt;新增名称&gt;，无需重复 clone；旧对话需要主动重新读取规则。
 
 执行安装范围内可恢复的修复即可；遇到需要改变现有项目规则或 Git 跟踪状态的冲突，再说明具体情况让我决定。</code></pre>
@@ -626,7 +634,7 @@ python "$HOME/multi-agent-collab/install.py" sync .</code></pre>
         </div>
 
         <footer class="site-foot mono">
-          <span>© 2026 AiFLYF — MIT LICENSE · V1.5.1</span>
+          <span>© 2026 AiFLYF — MIT LICENSE · V1.6.0</span>
           <span class="foot-mid">规则沉淀自 ego-link-esp32 · 15+ AI 协作会话复盘</span>
           <button class="to-top" data-target="0" data-hover><i>↑</i><span>TOP</span></button>
         </footer>
