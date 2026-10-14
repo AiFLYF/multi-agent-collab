@@ -1,55 +1,52 @@
 # 每次新对话，从这里开始
 
-这是当前项目的开工入口。新建对话时执行一次；任务阶段间隙重扫 inbox、更新自己的心跳。
-平台入口会加载或指向根目录 `AGENTS.md`。如果它尚未进入上下文，先完整读取一次，随后读取本文件。
-旧对话不会因为安装或同步自动重新加载规则，需要新开对话，或明确要求重新读取。
+本文件是当前项目的最短启动清单。先读取根 `AGENTS.md`，再读取这里；已在上下文中的相同规则不用反复全文读取。
+平台发现入口不等于已经执行检查。新对话、上下文恢复或任务切换后，都要重新核对动态状态。
 
-## 最小阅读顺序
+## 先只读确认
 
-1. 确认当前工作区和分支，遵守根 `AGENTS.md`。不要默认其他会话已替你检查。
-2. `git fetch origin --prune`，然后 `python tools/agents_status.py --brief`。
-   返回 1 再展开完整看板；命令失败按 `.agents/TROUBLESHOOTING.md` 排查。
-3. 读 `.agents/inbox/` 中发给当前平台、当前会话或 `any` 的未答条目；读近 1–2 天 worklog。
-   这些文件会变化，每个新对话都要重新读。无文件就跳过，不能把“没有记录”当作“没有人在工作”。
-4. 查看开放 PR，结合进程、reflog 和文件时间确认没有同分支、同文件冲突。
-5. 编码任务开始写入前，按 `AGENTS.md` 建任务分支，然后运行：
+1. 确认工作区与分支，运行 `git status --short --branch` 和 `python tools/agents_status.py --brief`。
+   看板返回 1 时展开完整版并查看原因，不能把“无活跃”当作“无人占用”。
+2. 读取发给当前平台、自己的会话或 `any` 的未答 inbox，以及近 1–2 天 worklog。
+   收到暂停、取消或避让要求先处理；缺文件就说明，不编造记录。
+3. 判断这是只读咨询、新写任务，还是当前任务继续。只读任务不用登记写会话。
+   继续同一任务时沿用自己的 ID；不要每次追问都创建新会话。
 
-   ```text
-   python tools/agents_session.py start --agent <当前平台> --task "任务" --files <相对文件或目录> --json
-   ```
+## 即将写入时
 
-   保存返回的会话 ID。若同工作区、分支或文件范围已被占用，停止并协调；不能重写别人的记录。
-   旧版没有此工具时，用 `.agents/sessions/_template.md` 手动登记并提示升级核心工具。
-
-## 执行期间与收尾
+按总章完成 fetch、PR 与进程/reflog 交叉检查，确认任务分支及文件范围，再登记：
 
 ```text
-python tools/agents_session.py heartbeat <会话ID> --agent <当前平台> --note "当前进度"
-python tools/agents_session.py finish <会话ID> --agent <当前平台> --summary "结果" --tests "实际测试结果"
-python tools/agents_session.py handoff <会话ID> --agent <当前平台> --summary "下一步、阻塞点和未提交文件"
+python tools/agents_session.py start --agent <平台> --task "任务" --files <相对文件或目录> --json
 ```
 
-阶段间隙和长命令前仍需重扫 inbox；心跳不能证明已处理人类指令。
-扩大文件范围时先给 heartbeat 加 `--files` 声明完整新范围，再修改文件。
-finish 追加日志并释放占用；handoff 写交接留言、保留 blocked 占用，等待明确接管。
-文件范围只是协作约定，系统锁只保护登记过程，不锁住源码，也不能阻止绕过协议的程序。
+保存实际返回的 ID。有占用或未答人类指令时先协调。
+人类指令本身就是待执行任务时，先读并回执，再用 `--ack-inbox <指令文件名>` 声明纳入计划；
+保留 open，实际完成后才 answered。这个参数不能绕过暂停、取消或避让要求。
+分支基线缺失、没有远端或 GitHub 不适用时，说明具体情况；不擅自创建远端基线或绕过主干保护。
+旧版没有会话工具时可用 `.agents/sessions/_template.md` 手动登记，并提示升级。
 
-共享格式不熟悉时再读 `.agents/README.md`；发生故障时再查手册相应条目。
-获取现状优先跑命令，不要每个新对话都读安装器、看板源码或全部历史日志。
-
-## 新增平台与同步
-
-各平台读取同一个 `AGENTS.md` 和本入口；更新这两份文档后，新对话读取的是最新内容。
-WorkBuddy 的完整镜像需要同步；新增平台也使用同一条命令：
+## 执行、恢复与收尾
 
 ```text
-python "<套件目录>/install.py" sync "<项目目录>" --platforms cursor
-python "<套件目录>/install.py" sync "<项目目录>"
+python tools/agents_session.py heartbeat <ID> --agent <平台> --note "当前进度"
+python tools/agents_session.py handoff <ID> --agent <平台> --summary "完成项、下一步、阻塞和文件位置"
+python tools/agents_session.py resume <ID> --agent <平台> --note "继续原任务的依据"
+python tools/agents_session.py finish <ID> --agent <平台> --summary "实际结果" --tests "实际测试命令与结果"
 ```
 
-从 `.agents/install.json` 的 `source_dir` 找到套件目录；默认是用户主目录下的
-`multi-agent-collab`。`sync` 追加平台、刷新入口和忽略规则，保留项目总章与协作记录；
-更新套件核心模板要运行 `install`。无需常驻服务，不会自动下载代码或修改平台的全局配置。
+- 每个阶段、长命令前重扫 inbox；每 15 分钟内或每阶段更新心跳。
+- 扩大修改范围前，用 heartbeat 的 `--files` 提交**完整新列表**，检查成功后再修改。
+- blocked 保留占用；恢复原任务用 resume。done 才释放占用，不能复活已结束的记录。
+- resume / finish 回执自己的交接条，普通问题仍需在原文件里回复。
+- 测试失败不能提交或推送；预览和静态检查不能替代实际运行。
 
-安装器只能验证入口路径、内容和忽略规则。平台版本、工作区信任设置及用户关闭规则加载等因素
-仍会影响自动读取。新对话验证时，确认 agent 能说明当前分支、看板结果及 inbox，而不只是复述口号。
+操作细节、状态选择和例外见 [WORKFLOW.md](WORKFLOW.md)；字段格式见 [README.md](README.md)；
+出错按 [TROUBLESHOOTING.md](TROUBLESHOOTING.md) 查询。只读相关段落，不扫描全部历史和工具源码。
+
+## 同步入口
+
+新增平台或刷新 WorkBuddy 镜像用 `python "<套件目录>/install.py" sync "<项目>" --platforms <新增平台>`；
+没有新增平台时省略参数。核心工具和规则升级使用 install，实际套件路径记录在 install.json 的 source_dir。
+已有对话不会因为文件变化就自动重新载入；需要新开对话或明确重读。
+系统锁只保护登记更新，不能锁住源码；规则是否被客户端加载仍需实际新会话验收。

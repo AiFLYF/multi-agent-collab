@@ -59,7 +59,7 @@ FUTURE_HB_TOL_MIN = 10      # 心跳比当前时刻快超过这么多 → 视为
 
 # 版本必须与 install.py 的 KIT_VERSION 保持一致（有测试锁定，防两边漂移）。
 # 看板独立分发到目标项目，不能 import 安装器，所以各存一份常量。
-BOARD_VERSION = "1.5.0"
+BOARD_VERSION = "1.5.1"
 
 # 人类可视化模式（--web / --html）：纯本机，不影响 JSON/终端模式与 agent 用法
 WEB_PORT_DEFAULT = 8731
@@ -1866,7 +1866,7 @@ def run_web(port: int, stale_min: int, with_prs: bool, open_browser: bool,
             httpd = make_server(ROOT, port=candidate, stale_min=stale_min,
                                 with_prs=with_prs, bind=bind,
                                 password=password, directives=directives)
-            actual = candidate
+            actual = httpd.server_address[1]
             break
         except OSError:
             continue
@@ -1888,7 +1888,9 @@ def run_web(port: int, stale_min: int, with_prs: bool, open_browser: bool,
               if password else "  模式    只读分享（不能发指令）")
     print(f"  指挥    {'允许在网页上对 agent 下指令' if directives else '已关闭（只读）'}"
           f"；每 {WEB_REFRESH_SEC} 秒刷新；Ctrl+C 停止")
-    if actual != port:
+    if port == 0:
+        print(f"  （系统分配可用端口 {actual}）")
+    elif actual != port:
         print(f"  （默认端口 {port} 被占用，已自动改用 {actual}）")
     if open_browser:
         try:

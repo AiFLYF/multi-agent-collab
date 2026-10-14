@@ -1,87 +1,58 @@
-# 问事板（inbox）填写范例
+# 问题、回执与交接示例
 
-> **这个文件是什么**：展示 `templates/inbox.md` 在真实协作里怎么用。
-> 三个虚构但写实的场景：开工前避让协商、交接提问、事后回复。
-> 安装器不会把本文件装进你的项目。
+本文件是教学示例，不会安装到项目。`open` 表示事情尚未完成，收到回执也可以继续保持 open；
+只有问题得到回答或指令实际完成后才置 answered。回复保留在原文件中。
 
----
-
-## 例 1：避让协商——两个会话要碰同一个文件（最有价值的用法）
-
-文件名：`.agents/inbox/Q-2026-10-09-01.md`
+## 两个任务涉及同一文件
 
 ```markdown
-# Q-2026-10-09-01: 限流任务会动 middleware.py，与你在改的审计日志冲突吗？
+# Q-2026-10-14-01: 确认 middleware.py 的处理顺序
 
-- from: trae-261009-1015-a1b2
-- to: trae-261009-0930-c3d4
+- from: codex-261014-1000-a1b2
+- to: claude-261014-0930-c3d4
 - status: open
-- created: 2026-10-09 10:18
-- answered:
+- created: 2026-10-14 10:05
 
 ## 背景
 
-我在 feature/login-rate-limit 做登录限流，需要在 app/http/middleware.py 里挂一个
-限流中间件。看板显示你在 feature/audit-log 分支，open PR #44 里也改了 middleware.py。
+我准备做登录限流，你的 PR #44 也修改 app/http/middleware.py。
+会话工具已报告文件范围重叠，所以我尚未修改该文件。
 
 ## 我已尝试
 
-- 看了 PR #44 的 diff：你改的是 AuditMiddleware（约 42-78 行）和第 120 行的注册顺序
-- 我计划新增 RateLimitMiddleware 类（文件末尾追加），并在第 121 行注册
-- git merge-tree 试算了一下两个分支：middleware.py 1 处冲突（都在注册那段），其余无交集
+已看你的 PR diff。即使函数不同，也属于同一文件，当前工具不能登记函数或行号范围。
 
 ## 需要你做什么
 
-1. 确认一下你今天是否还会动 middleware.py 的注册段（115-125 行）
-2. 若会动：建议我先开 PR、你 rebase；或反过来，你预计几点推完？
-3. 若不会：我就按上面的行号开工，零重叠
-```
+确认处理顺序。我可以先做独立的限流模块和测试，等 PR #44 合并后再从更新的 develop 接入。
 
-回复（写进同一文件）：
-
-```markdown
 ## 回复
 
-审计中间件代码已完成，PR #44 现在只在等评审，不会再改 middleware.py。
-你直接开工即可；万一注册段冲突，我这边 rebase 成本低，我来 rebase。
-—— trae-261009-0930-c3d4，10:22
-
-（顶部 status 已改为 answered，answered: 2026-10-09 10:22）
+PR #44 仍在评审，请先做不重叠文件。合并后我会更新此条，再由你接入路由。
 ```
 
-## 例 2：交接——给"任何接手者"的提问
+这条回复尚未完成协商，因此可以保持 open。确定分工和后续动作后，在同一文件补充结论并置 answered。
+不要约定强推或 rebase；已发布历史保持原样。新任务从正确基线开始，已有分支需要同步时按项目允许的合并流程处理。
 
-文件名：`.agents/inbox/Q-2026-10-09-03.md`
+## 人类指令本身就是待执行任务
 
-```markdown
-# Q-2026-10-09-03: test_webhook.py 在干净 develop 上也连续超时，是环境问题吗？
+看板产生了一条要求“补充价格计算并运行测试”的人类指令。agent 应先阅读，写回“收到、计划和预计阶段”，
+保留 open，然后在登记或恢复时明确声明已纳入任务：
 
-- from: trae-261009-1015-a1b2
-- to: any
-- status: open
-- created: 2026-10-09 11:05
-- answered:
-
-## 背景
-
-feature/login-rate-limit 全量回归被 tests/test_webhook.py 卡住（3 次各超时 60s）。
-
-## 我已尝试
-
-- git stash 后在干净 origin/develop 上单跑该文件：同样超时 → 大概率与本改动无关
-- 本地 8080 端口没被占用（netstat 查过）
-- CI 上同一提交是绿的（看了最近一次 develop 的流水线记录）
-
-## 需要你做什么
-
-- 14:00 后开工的同学：先跑一次 pytest tests/test_webhook.py -q
-  - 若恢复正常：回一句"环境已恢复"，我就推分支开 PR（分支只比 develop 多 2 个 commit）
-  - 若仍超时：帮忙看下是不是本机 webhook 回调需要的内网隧道没启动，把结论写这里
+```text
+python tools/agents_session.py start --agent codex --task "补充价格计算" --files cart.py test_cart.py --ack-inbox Q-2026-10-14-02.md
 ```
 
-## 例 3：回复礼仪对照
+这个参数不代表指令已完成，也不扩大授权。暂停、取消或禁止修改某文件的要求仍须立即执行，不能用参数绕过。
+真正完成后，把实际测试命令和结果写入该指令的 `## 回复`，再置 answered 并记录时间。
+每个新执行者仍须自己阅读；不能认为别人确认过就无需检查。
 
-- ✅ 回复写进**同一文件**的 `## 回复`，顶部 `status: open → answered` 并填 `answered` 时间
-- ✅ 一件事一个文件；新问题另开 `Q-YYYY-MM-DD-NN.md`（序号当日递增）
-- ✅ 给得出动作就给动作："你直接开工""我来 rebase""预计 14:00 回"
-- ❌ 不要只回"好的"——后人翻 inbox 时看不出到底协商了什么
+## 交接与恢复
+
+```text
+python tools/agents_session.py handoff <ID> --agent codex --summary "完成项、阻塞、下一步、未提交位置、测试和 PR 状态"
+python tools/agents_session.py resume <ID> --agent codex --note "原会话继续处理"
+```
+
+工具生成的交接条来自会话 ID，不冒充 human。恢复或收尾时，只自动回执本会话的交接条；
+其它问题和人类指令仍需独立处理。原会话失联的接管流程见总章，不能因为时间到了就冒用其 ID。

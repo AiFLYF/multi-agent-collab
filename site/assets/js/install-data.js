@@ -1,6 +1,6 @@
 // 由 scripts/sync_install_docs.py 生成，请修改安装器或提示词模板。
 window.MAC_INSTALL = {
-  "version": "1.5.0",
+  "version": "1.5.1",
   "platforms": [
     {
       "id": "codex",
@@ -124,6 +124,7 @@ window.MAC_INSTALL = {
     "tools/agents_session.py",
     ".agents/README.md",
     ".agents/START_HERE.md",
+    ".agents/WORKFLOW.md",
     ".agents/TROUBLESHOOTING.md",
     ".agents/sessions/_template.md",
     ".agents/inbox/_template.md",

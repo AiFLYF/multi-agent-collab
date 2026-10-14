@@ -23,9 +23,9 @@ $ARGUMENTS
    同一分支或同一批文件（rc=1 再跑无参数完整版）；有冲突先在 `.agents/inbox/` 留问，不要抢活
 4. 读 `.agents/inbox/` 中点名 claude / any 的未答问题与近两天 worklog
 
-随后：从最新 `develop` 切 `feature/<任务名>` → 复制
-`.agents/sessions/_template.md` 注册本会话（ID `claude-<YYMMDD-HHMM>-<4位随机>`，
-纯本地文件，不提交不推送）→ 开发（只 add 项目文件，禁止 `git add -A`，
+随后：按总章确认分支基线；新任务切 `feature/<任务名>`，同任务继续沿用自己的分支和 ID。
+用 `python tools/agents_session.py start --agent claude --task "任务" --files <实际范围>` 登记，
+blocked 恢复用 resume。会话文件纯本地、不提交不推送。开发（只 add 项目文件，禁止 `git add -A`，
 禁止提交 AGENTS.md 第 8 节列出的本机协作文件）→ 跑 AGENTS.md 第 6 节约定的测试门禁 →
 推送项目分支并 `gh pr create --base develop`（PR 描述写改动/原因/测试证据）
 → session 置 done、worklog 追加总结（本地保存即可）。

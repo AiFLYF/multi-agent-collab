@@ -1,6 +1,6 @@
 # `.agents/` — 多 Agent 共享记忆区（本机）
 
-这里是这台电脑上所有 AI 编码会话之间的**公告板 + 交接班本**。
+这里是当前项目的 AI 编码会话之间的**公告板 + 交接班本**。
 **纯本机目录，不进 git**（已在 `.git/info/exclude` 中忽略）：同一工作区里切任何分支它都在，
 所有 agent 直接读写同一份；换电脑/重新 clone 不会带走，需要自行拷贝。
 行为规则见根目录 [AGENTS.md](../AGENTS.md)，本文件只说明格式。
@@ -11,6 +11,7 @@
 .agents/
 ├── README.md                 # 本文件
 ├── START_HERE.md             # 每次新对话的最小阅读顺序
+├── WORKFLOW.md               # 场景选择、状态转换、完整命令和验证边界
 ├── install.json              # 项目名、已选平台、套件源路径与版本
 ├── coordination.lock         # 登记过程的系统锁（主 worktree 共用，退出自动释放）
 ├── sessions/                 # 每个活跃会话一个文件：我是谁、在哪个分支、心跳
@@ -28,8 +29,8 @@
 沙箱拦截 git 写引用、worktree 盲区、代理/终端环境异常等已知问题都有现成的判断和修复步骤；
 解决了新问题必须往该手册追加一条。
 
-为什么这样分片：多个 agent 同时写同一个文件必然冲突。**一会话一文件、一问题一文件、
-一天一文件**，各写各的，万一冲突合并时取并集。
+按会话与问题分片可减少互相覆盖。**一会话一文件、一问题一文件、一天一文件**；
+日志只追加，状态更新用系统锁串行保护。手工编辑仍需协调，不能认为小文件天然没有冲突。
 
 ## 新对话与新增平台
 
@@ -54,9 +55,13 @@
 - heartbeat：每 ≤ 15 分钟或每完成一阶段更新，**保存文件即生效，不用 commit/push**；
   超过 15 分钟没更新（或时间无法解析、比当前时刻快 10 分钟以上）视为失活
 - 收工把 status 置 `done`；没做完要走，置 `blocked`、填 `handoff` 并在 inbox 留交接问题
-- 建议使用 `tools/agents_session.py` 的 start / heartbeat / finish / handoff 维护，避免漏字段。
+- 建议使用 `tools/agents_session.py` 的 start / heartbeat / handoff / resume / finish 维护，避免漏字段。
   `files` 是 JSON 数组（如 `["src/app.py", "docs/"]`）；看板显示占用并提醒交叉冲突。
   同工作区不可重复登记；独立 worktree 可并行处理不重叠的文件。失活不会自动释放占用。
+- `progress` 是当前简短进度；`handoff` 是阻塞说明；`handoff_inbox` 指向该会话生成的交接条。
+  resume / finish 只自动回执自己的交接条，不会替你回答其它问题。
+- `acknowledged_inbox` 记录本次 start / resume 显式确认已纳入任务的人类指令；它不改变原指令的 open 状态。
+- 头部字段表示当前状态，正文保留上下文与历史；使用范式见 [WORKFLOW.md](WORKFLOW.md)。
 
 ## 工作日志 `worklog/YYYY-MM-DD.md`
 

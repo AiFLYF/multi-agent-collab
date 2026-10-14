@@ -140,12 +140,64 @@ class TestSessionCoordination(unittest.TestCase):
 
     def test_human_inbox_must_be_handled_before_start(self) -> None:
         question = self.root / ".agents/inbox/Q-2026-10-14-01.md"
-        question.write_text("# 人类指令\n- from: human\n- to: any\n- status: open\n\n暂停写操作。\n", encoding="utf-8")
+        question.write_text("# 人类指令\n- from: human\n- to: any\n- status: open\n\n请执行任务并记录实际测试结果。\n", encoding="utf-8")
         result, data = self.start(self.root)
         self.assertEqual(result.returncode, 1, data)
         self.assertIn("人类指令", data["error"])
+        acknowledged, record = self.command(self.root, "start", "--agent", "codex", "--task", "按指令执行任务",
+                                            "--files", "src/app.py", "--ack-inbox", question.name)
+        self.assertEqual(acknowledged.returncode, 0, record)
+        self.assertIn("- status: open", question.read_text(encoding="utf-8"), "确认收到不能伪装成指令完成")
+        self.command(self.root, "finish", record["id"], "--agent", "codex", "--summary", "演练会话结束", "--tests", "仅验证登记流程，没有业务改动")
         question.write_text(question.read_text(encoding="utf-8").replace("status: open", "status: answered"), encoding="utf-8")
         self.assertEqual(self.start(self.root)[0].returncode, 0)
+
+    def test_resume_restores_same_session_and_answers_handoff(self) -> None:
+        _, record = self.start(self.root)
+        _, handoff = self.command(self.root, "handoff", record["id"], "--agent", "codex", "--summary", "等待外部结果")
+        path = Path(record["file"])
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write("\n## 保留的上下文\n不要覆盖。\n")
+        result, resumed = self.command(self.root, "resume", record["id"], "--agent", "codex", "--note", "外部结果就绪")
+        self.assertEqual(result.returncode, 0, resumed)
+        self.assertEqual(resumed["id"], record["id"])
+        self.assertEqual(resumed["status"], "active")
+        content = path.read_text(encoding="utf-8")
+        self.assertTrue(content.startswith("# Session: " + record["id"] + "\n\n- agent:"))
+        self.assertIn("不要覆盖", content)
+        self.assertIn("- status: answered", (self.root / handoff["inbox"]).read_text(encoding="utf-8"))
+
+    def test_resume_checks_human_instructions_addressed_to_session(self) -> None:
+        _, record = self.start(self.root)
+        _, handoff = self.command(self.root, "handoff", record["id"], "--agent", "codex", "--summary", "等待确认")
+        question = self.root / ".agents/inbox/Q-2026-10-14-targeted.md"
+        question.write_text(f"# 待执行任务\n- from: human\n- to: {record['id']}\n- status: open\n\n请补充测试。\n", encoding="utf-8")
+        result, data = self.command(self.root, "resume", record["id"], "--agent", "codex")
+        self.assertEqual(result.returncode, 1, data)
+        result, data = self.command(self.root, "check", "--agent", "codex", "--session", record["id"])
+        self.assertIn(question.name, data["human_inbox"])
+        result, data = self.command(self.root, "resume", record["id"], "--agent", "codex", "--ack-inbox", question.name)
+        self.assertEqual(result.returncode, 0, data)
+        self.assertIn("- status: open", question.read_text(encoding="utf-8"))
+        self.assertIn("- status: answered", (self.root / handoff["inbox"]).read_text(encoding="utf-8"))
+
+    def test_finish_only_answers_own_linked_handoff(self) -> None:
+        _, record = self.start(self.root)
+        _, handoff = self.command(self.root, "handoff", record["id"], "--agent", "codex", "--summary", "准备结束")
+        path = Path(record["file"])
+        original = path.read_text(encoding="utf-8")
+        human = self.root / ".agents/inbox/Q-2026-10-14-handoff-other.md"
+        human.write_text("# 人类问题\n- from: human\n- to: any\n- status: open\n", encoding="utf-8")
+        before = human.read_bytes()
+        path.write_text(original.replace(handoff["inbox"], ".agents/inbox/" + human.name), encoding="utf-8")
+        rejected, data = self.command(self.root, "finish", record["id"], "--agent", "codex", "--summary", "结束", "--tests", "测试场景")
+        self.assertEqual(rejected.returncode, 2, data)
+        self.assertEqual(human.read_bytes(), before)
+        path.write_text(original, encoding="utf-8")
+        result, data = self.command(self.root, "finish", record["id"], "--agent", "codex", "--summary", "正常收尾", "--tests", "测试场景")
+        self.assertEqual(result.returncode, 0, data)
+        self.assertIn("- status: answered", (self.root / handoff["inbox"]).read_text(encoding="utf-8"))
+        self.assertEqual(human.read_bytes(), before)
 
     def test_unsafe_paths_and_shared_branch_are_rejected(self) -> None:
         for path in ("../outside", ".git/objects", "C:/outside", "src/*.py"):

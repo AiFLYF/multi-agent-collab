@@ -9,7 +9,7 @@
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](#安装下载一次按项目复用)
 [![deps](https://img.shields.io/badge/dependencies-none-success)](#仓库结构与验证)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![changelog](https://img.shields.io/badge/changelog-1.5.0-orange)](CHANGELOG.md)
+[![changelog](https://img.shields.io/badge/changelog-1.5.1-orange)](CHANGELOG.md)
 
 让同一台电脑上、同一项目里的多个 AI 助手遵循一份协作规则：开工先确认谁在做什么，
 改动前避开冲突，收工留下能接手的记录。支持 Codex、Claude Code、OpenCode、Pi、Trae、
@@ -19,6 +19,8 @@ WorkBuddy、Cursor、GitHub Copilot、Windsurf、Gemini CLI、Qwen Code、Cline�
 [在线介绍与安装配置](https://aiflyf.github.io/multi-agent-collab/) ·
 [交互演示](https://aiflyf.github.io/multi-agent-collab/demo.html) ·
 [平台接入与验证](docs/PLATFORMS.md) · [更新记录](CHANGELOG.md)
+
+[完整流程验证与能力边界](docs/VALIDATION.md) 记录实际覆盖的环节、发现的问题和后续优先项。
 
 ![协作看板示例：会话状态、指令与回复](docs/assets/board-screenshot.png)
 
@@ -114,17 +116,33 @@ python "$HOME/multi-agent-collab/install.py" install "D:\code\my-app" --platform
 ```bash
 python tools/agents_session.py start --agent codex --task "完善登录" --files src/login.py tests/test_login.py --json
 python tools/agents_session.py heartbeat <返回的会话ID> --agent codex --note "正在验证"
+python tools/agents_session.py resume <会话ID> --agent codex --note "阻塞解除，继续原任务"
 python tools/agents_session.py finish <会话ID> --agent codex --summary "完成登录修复" --tests "项目测试通过"
 ```
 
 - 登记时检查同工作区、同分支和跨 worktree 的文件占用；目录声明能覆盖其子文件。
 - 主 worktree 的系统锁让并发登记串行，避免两个 agent 同时通过检查；进程退出自动释放登记锁。
-- 未答的人类 inbox 会阻止新写任务；工具检查会话所有者与实际分支，防止误改其它会话。
+- 未确认的人类 inbox 会阻止新写任务；明确回执可用 `--ack-inbox` 纳入当前任务，实际完成前仍保留 open。
+  工具检查会话所有者字段与实际分支，防止误操作。
 - 失活仍保留占用，按接管流程协调；`handoff` 生成交接记录并保留 blocked 状态。
 - `finish` 追加 worklog 并释放占用；看板显示文件范围、阶段进度与占用冲突。
+- blocked 后用 `resume` 恢复自己的 ID；resume / finish 自动回执自己的交接条，避免长期残留未答告警。
 
 扩大范围时先用 heartbeat 的 `--files` 更新完整列表。只读检查用 `check --files ... --json`。
 这些检查协调遵守协议的 agent，不能锁住源码或阻止其它程序绕过登记。
+
+只读咨询不用登记写会话，继续同一任务不用新建 ID。同文件不同函数仍算冲突，需要拆分或串行交接。
+详细场景、失败处理与状态规则见 [协作操作手册](docs/WORKFLOW.md)。
+
+### 自己验证一遍完整流程
+
+```bash
+python scripts/rehearse_workflow.py --report .agents/rehearsal-latest.md
+```
+
+脚本真实 clone 套件，在隔离项目中跑双项目复用、安装升级、worktree 协作、文件冲突、
+网页指令与回复、中断恢复、收尾、业务测试、向本地 bare 远端推送和卸载预览，输出逐步报告并清理现场。
+它不调用模型、不创建真实 GitHub PR；每个平台的新对话加载仍按平台说明单独验收。
 
 ## 平台选择与同步
 
@@ -261,6 +279,7 @@ multi-agent-collab/
 ├── platforms/                  # 按需安装的平台入口模板
 ├── docs/                       # 启动流程、平台说明、共享格式与故障手册
 ├── scripts/sync_install_docs.py # 从安装器与提示词模板同步 README 和页面数据
+├── scripts/rehearse_workflow.py # 隔离项目中的完整使用流程演练和报告
 ├── site/                       # 介绍页、安装配置器、交互演示（静态文件）
 ├── tests/selftest.py            # 43 个测试用例（15 单元 + 28 安装器 E2E）
 ├── tests/test_sessions.py       # 协作并发、占用、交接和新增平台回归
