@@ -1,0 +1,111 @@
+# 协作操作手册
+
+本手册用于当前项目。总章是 `AGENTS.md`，新对话先读 `START_HERE.md`；需要执行某一步时再查这里。
+规则不能代替实际检查，也不能证明模型已读懂上下文。每次操作应以命令结果和当前文件为准。
+
+## 先判断任务状态
+
+| 当前情况 | 应做的事 | 不应做的事 |
+|---|---|---|
+| 咨询、审查、解释代码 | 只读检查分支、看板和相关记录 | 为了回答问题就建分支、登记写任务 |
+| 新的写任务 | 协调后切任务分支，`start` 登记范围 | 重复登记，或占用整个工作区 |
+| 同一任务继续，自己的会话 active | 沿用 ID，`heartbeat` 更新进度 | 每个用户追问都新建会话 |
+| 自己的会话 blocked，用户要求继续 | 先处理指令，再 `resume` | 删除旧会话或换 ID 绕过占用 |
+| 其它会话占用文件 | 协商拆分、等待收尾，或按总章接管 | 因为心跳超时就认定可以抢占 |
+| 本轮不能继续 | `handoff` 写清下一步与阻塞点 | 把未完成任务标成 done |
+| 工作完成 | 真跑项目测试，再按项目流程提交/PR，最后 `finish` | 把预览、编译或口头“应该通过”当测试结果 |
+
+同一任务跨轮次继续时，只有明确持有自己的 ID、工作区和登记分支一致，才能恢复它。
+身份不明、会话属于别人或工作区被切换时，先只读调查并通知用户。
+
+## 开工检查
+
+1. 读当前任务涉及的规则。根总章和启动清单每个新对话读一次；字段格式不熟悉再读 `.agents/README.md`。
+2. 查看 `git status --short --branch`、看板、相关 inbox 和近 1–2 天日志。
+3. 准备写代码时，按总章 fetch、查 open PR、交叉检查构建进程与 reflog，确认没有重复任务。
+4. 有 GitHub 远端才查该仓库的 PR；本地仓库没有远端时说明这一点，不添加未知远端。
+5. 读取 `POLICY.md`；配置的基线不存在时，先说明当前分支结构。不要擅自建立远端基线或把功能直接推入主干。
+   可以继续已经授权的只读审查、本地验证，或同一任务现有 feature 分支上的工作。
+
+## 按项目选择分支策略
+
+首次安装默认 Git Flow；已有安装沿用已保存策略。只有确认项目流程后才配置，不能为绕过占用或主干保护临时改策略。
+
+```text
+python <套件目录>/install.py install <项目> --workflow github-flow
+python <套件目录>/install.py install <项目> --workflow custom --base-branch trunk --task-prefixes task/,fix/ --protect-branches staging
+```
+
+- `git-flow`：默认基线 develop，允许 feature/、release/、hotfix/。
+- `github-flow`：默认基线 main，允许 feature/、fix/、docs/、chore/、codex/。
+- `custom`：明确基线和任务前缀。无论哪种策略，main、master、develop 和所选基线都受保护。
+- `.agents/policy.json` 保存配置，`POLICY.md` 是安装器生成的阅读入口。用安装命令修改，先 `--dry-run` 预览。
+- 在同一仓库的主 worktree 修改策略，再对其它 worktree 执行 sync。会话工具始终优先读主策略，不会用旧副本放行。
+- 已有会话仍可更新进度、handoff 或 finish；恢复写入和扩大文件范围要符合新策略。
+
+工具只校验登记，不会替 Git 设置服务器分支保护。PR 目标必须符合实际项目规则；策略不创建分支、不合并、不推送。
+
+## 登记、扩大范围与心跳
+
+以下 `<ID>` 都是 `start` 实际返回的会话 ID，不能直接照抄尖括号。
+
+```text
+python tools/agents_session.py start --agent codex --task "完善登录校验" --files src/login.py tests/test_login.py --json
+python tools/agents_session.py heartbeat <ID> --agent codex --note "正在运行回归测试"
+python tools/agents_session.py heartbeat <ID> --agent codex --files src/login.py tests/test_login.py docs/login.md
+python tools/agents_session.py check --agent codex --session <ID> --files src/login.py --json
+```
+
+- 文件范围是相对于当前项目根目录的完整列表；目录以 `/` 结尾，不使用通配符或 `..`。
+- heartbeat 的 `--files` **替换完整范围**，不是追加；扩大范围先检查成功，再开始修改。
+- 当前粒度是文件/目录。即使改同一文件里的不同函数，也会冲突；本版不支持声明行号或函数范围。
+  应拆成不重叠文件，或约定先后顺序。独立 worktree 不会自动放行重复文件任务。
+- 同一物理工作区有未结束会话时，新的写任务会被阻止，避免互相切分支和覆盖文件。
+- 15 分钟内或每个阶段更新一次心跳。预计返回时间只是说明，不会延长失活阈值。
+- 检查返回 1 时看清原因：处理人类指令、解决占用或补齐协调；不能通过缩小虚假的范围绕过。
+
+## 中断、恢复、交接与收尾
+
+```text
+python tools/agents_session.py handoff <ID> --agent codex --summary "已完成什么；待办和阻塞；未提交文件、测试结果与相关 PR"
+python tools/agents_session.py resume <ID> --agent codex --note "阻塞已解除，继续原任务"
+python tools/agents_session.py finish <ID> --agent codex --summary "实现与验收结果" --tests "实际运行的命令和结果"
+```
+
+`handoff` 将会话置为 blocked，保留文件占用，并写一条来自该会话的交接留言。
+`resume` 核对所有者字段、登记分支、文件占用及发给当前会话的人类指令，恢复 active 并回执自己的交接条。
+`finish` 追加日志、回执自己的交接条，置 done 后释放占用。已结束的会话不能重新激活。
+这些命令不替你处理普通业务问题或其它会话的留言；它们仍须在原文件中明确回复。
+
+人类指令本身要求你执行新任务时，先阅读并在原文件回执计划，保留 open。
+start / resume 可用 `--ack-inbox Q-日期-序号.md` 显式确认已阅读并纳入本任务，避免为了开工而虚假标记完成。
+这个参数只适用于当前仍待处理的指令，不能忽略暂停、取消、避让或授权边界；执行完再写结果并置 answered。
+
+如果要交给**另一个**执行者：先在交接条里明确下一步、分支和文件状态。原执行者确认移交后收尾，
+新执行者再登记自己的任务；原执行者失联时，按 [TAKEOVER.md](TAKEOVER.md) 检查、声明、等待与确认。
+不要冒用另一个 ID。`--agent` 的核对只是防误操作，不是身份认证或文件系统权限隔离。
+
+`done` 是协作状态，不是测试引擎的认证。`--tests` 记录的是调用者提供的结果，必须如实填写；
+测试未通过仍不能提交、推送或开 PR。只读任务没有改动时可说明“不适用”，不能填成“全绿”。
+
+## 每次汇报只保留有用信息
+
+说明当前分支、这一阶段的实际变更、运行过的测试和结果，以及下一步或阻塞点。
+没有提交就写“暂无新提交”。不要重复完整历史、倾倒源码，或把意向写成已经完成。
+工具失败时保留输出、分支、未提交位置；先查故障手册，再做可恢复的修复。
+组合命令必须逐项核对退出码；前一步失败时停止依赖它的提交或推送，不能只看最后一条命令是否成功。
+
+## 验证一次完整使用流程
+
+在套件源码目录运行：
+
+```text
+python scripts/rehearse_workflow.py --report .agents/rehearsal-latest.md
+```
+
+脚本在隔离临时目录中真实 clone 套件，用两个项目复用同一副本，执行安装/升级、工作区登记、
+冲突拦截、真实看板 HTTP 指令与回复、handoff/resume/finish、业务测试、向隔离 bare 远端推送和卸载预览。
+报告记录每步命令、预期退出码、实际输出和断点，结束时清理本次临时目录与服务。
+
+它验证工具链能否闭环，不调用任何模型、不修改用户的实际项目，也不创建真实 GitHub PR。
+各平台是否自动加载规则，仍要按套件源码中 `docs/PLATFORMS.md` 的方法，在对应客户端新开对话验证。

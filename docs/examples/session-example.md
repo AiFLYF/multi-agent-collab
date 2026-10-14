@@ -1,93 +1,56 @@
-# 会话文件填写范例（匿名化，来自真实协作）
+# 会话全生命周期示例
 
-> **这个文件是什么**：`templates/session.md` 是空模板，第一次用可能不知道"填出来长什么样"。
-> 下面是一个**虚构但完全写实**的范例（一个 Web 后端项目的限流功能任务），
-> 展示会话文件在任务全生命周期里怎么变化。安装器不会把本文件装进你的项目。
+这是教学示例，不会安装到项目。命令中的 `<ID>` 使用 start 实际返回的值；不要复制示例时间或编造心跳。
 
----
+## 新任务：先协调，后登记
 
-## 例 1：任务刚开始（注册时）
+在已有 Git Flow 基线的项目里，先读总章与启动清单，确认没有冲突和重复 PR，再建立 feature 分支。
 
-文件名：`.agents/sessions/trae-261009-1015-a1b2.md`
+```text
+python tools/agents_session.py start --agent codex --task "增加登录限流" --files app/core/rate_limit.py tests/test_rate_limit.py --json
+```
+
+返回的 ID 对应一个本机会话文件，关键字段形如：
 
 ```markdown
-# Session: trae-261009-1015-a1b2
+# Session: codex-261014-1000-a1b2
 
-- agent: trae
+- agent: codex
 - branch: feature/login-rate-limit
-- task: 登录接口加速率限制（内存令牌桶 + 429 响应）
+- task: 增加登录限流
+- files: ["app/core/rate_limit.py", "tests/test_rate_limit.py"]
 - status: active
-- started: 2026-10-09 10:15
-- heartbeat: 2026-10-09 10:15
-- pr:
-
-## 当前进度
-
-- 10:15 已 fetch，看板无活跃会话；open PR 只有 #42（支付模块，不相关）
-- 已从 origin/develop 切出 feature/login-rate-limit
-- 正在读 app/auth/login.py 与现有中间件结构
-
-## 下一步
-
-- 设计 RateLimiter 接口，先在 inbox 问一句是否有人在动 middleware.py
-
-## 阻塞点 / handoff
-
-- 无
+- heartbeat: 2026-10-14 10:00
 ```
 
-## 例 2：任务进行中（只改心跳 + 进度，最新更新写最上面）
+## 扩大范围：先检查再动手
 
-```markdown
-- heartbeat: 2026-10-09 10:40
+后来需要修改登录路由，提交完整范围：
 
-## 当前进度
-
-- 10:40 RateLimiter 已实现（app/core/rate_limit.py），单测 12 条全绿
-- 10:25 已在 inbox 与 trae-261009-0930-c3d4 确认 middleware.py 改动零重叠
-- 正在接 login 路由，预计还要改 2 个文件
-
-## 下一步
-
-- 跑全量回归 pytest -q；绿了就提交、推分支、开 PR
+```text
+python tools/agents_session.py heartbeat <ID> --agent codex --files app/core/rate_limit.py tests/test_rate_limit.py app/auth/login.py --note "准备接入登录路由"
 ```
 
-## 例 3：要离开但任务没做完（handoff 必填，inbox 同步留交接）
+若别人占用了路由文件，命令失败，原范围保留。此时先协商，不删除旧记录，也不把文件漏写在列表里。
 
-```markdown
-- status: blocked
-- heartbeat: 2026-10-09 11:05
+## 受阻与恢复
 
-## 阻塞点 / handoff
-
-- 代码与单测都完成了，但全量回归在 tests/test_webhook.py 连续 3 次超时，
-  看起来与本改动无关（stash 后在干净 develop 上也超时），已在 inbox Q-2026-10-09-03 提问
-- 未提交：无（工作区干净）；本地分支 feature/login-rate-limit 比 develop 多 2 个 commit，
-  尚未 push
-- 接手者：先看 inbox 那条问题；若 webhook 超时确认是环境问题，直接 push + 开 PR 即可，
-  PR 描述草稿在分支最后一个 commit 的正文里
-- 预计 14:00 回来
+```text
+python tools/agents_session.py handoff <ID> --agent codex --summary "限流逻辑完成；回归因测试服务不可达受阻；未提交文件为 app/core/rate_limit.py 和 tests/test_rate_limit.py；服务恢复后先重跑全量测试"
+python tools/agents_session.py resume <ID> --agent codex --note "测试服务恢复，继续原任务"
 ```
 
-## 例 4：任务收尾（置 done 后不再更新心跳）
+handoff 保留 blocked 占用，并把交接路径写入会话。resume 保留同一个 ID、重新检查占用，
+恢复 active 并回执该交接条。它不会自动解决普通业务问题，也不会把失败测试视为通过。
 
-```markdown
-- status: done
-- heartbeat: 2026-10-09 11:30
-- pr: https://github.com/<org>/<repo>/pull/47
+## 测试与收尾
 
-## 当前进度
+先运行项目约定的测试；任何门禁失败都先修复或说明阻塞，不提交、不推送、不用 rebase 改写历史。
+测试通过后，按总章只暂存本任务文件、提交、复核 SHA、推送并建立 PR，再结束会话：
 
-- 11:20 PR #47 已开（base=develop），全量回归 187 项全绿
-- 11:30 worklog 已追加总结；本会话结束
+```text
+python tools/agents_session.py finish <ID> --agent codex --summary "登录限流已实现并完成评审准备，PR 地址见本次工作记录" --tests "pytest -q：实际通过数量填写在这里"
 ```
 
----
-
-## 要点回顾
-
-- **文件名就是会话 ID**：`<agent>-<YYMMDD-HHMM>-<4位随机>`，不要改名
-- **心跳只需"保存文件"**，不用 git；≤15 分钟或每完成一个阶段更新一次
-- 最新进度永远写在 `## 当前进度` **最上面**，方便别人扫一眼就懂
-- 离开时没做完：status 置 `blocked`，handoff 写清"未完成部分 / 未推送改动在哪 / 接手第一步"，
-  并在 inbox 留一条点名接手方或 `to: any` 的问题
+`--tests` 是实际结果的记录，不会替你运行测试。finish 追加日志、回执自己的交接条并释放占用。
+终态记录保留；下一项新任务建立新 ID。

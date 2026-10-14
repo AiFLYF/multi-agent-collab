@@ -59,7 +59,7 @@ FUTURE_HB_TOL_MIN = 10      # 心跳比当前时刻快超过这么多 → 视为
 
 # 版本必须与 install.py 的 KIT_VERSION 保持一致（有测试锁定，防两边漂移）。
 # 看板独立分发到目标项目，不能 import 安装器，所以各存一份常量。
-BOARD_VERSION = "1.4.1"
+BOARD_VERSION = "1.6.0"
 
 # 人类可视化模式（--web / --html）：纯本机，不影响 JSON/终端模式与 agent 用法
 WEB_PORT_DEFAULT = 8731
@@ -294,6 +294,34 @@ def agent_roots() -> list[tuple[Path, bool]]:
     return found
 
 
+def parse_claimed_files(raw: str) -> tuple[list[str], bool]:
+    if not raw:
+        return [], False
+    try:
+        value = json.loads(raw)
+        if not isinstance(value, list) or any(not isinstance(item, str) or not item.strip() for item in value):
+            return [], True
+        return value, False
+    except (ValueError, TypeError):
+        return [], True
+
+
+def overlapping_files(left: list[str], right: list[str]) -> list[str]:
+    def normalize(path: str) -> str:
+        path = path.replace("\\", "/").rstrip("/")
+        return path.lower() if os.name == "nt" else path
+    matches = []
+    for a in left:
+        an = normalize(a)
+        for b in right:
+            bn = normalize(b)
+            if an == bn or (a.endswith(("/", "\\")) and bn.startswith(an + "/")) or (
+                    b.endswith(("/", "\\")) and an.startswith(bn + "/")):
+                matches.append(a)
+                break
+    return sorted(set(matches))
+
+
 def load_sessions(roots: list[tuple[Path, bool]], now: datetime,
                   stale_min: int) -> list[dict]:
     out: dict[str, dict] = {}
@@ -316,6 +344,7 @@ def load_sessions(roots: list[tuple[Path, bool]], now: datetime,
                 ftime = None
             st = status_word(kv.get("status", ""))
             closed = st in CLOSED_WORDS
+            claimed, claims_error = parse_claimed_files(kv.get("files", ""))
             item = {
                 "id": f.stem,
                 "agent": kv.get("agent", "?"),
@@ -331,6 +360,11 @@ def load_sessions(roots: list[tuple[Path, bool]], now: datetime,
                 "pr": kv.get("pr", ""),
                 "file": f.name,
                 "worktree": tag,
+                "workspace": str(root.resolve()),
+                "files": claimed,
+                "claims_error": claims_error,
+                "progress": kv.get("progress", ""),
+                "handoff": kv.get("handoff", ""),
             }
             # 同一会话 ID 在多个 worktree 各有一份（拷过 .agents/）→ 留心跳最新的
             old = out.get(f.stem)
@@ -859,6 +893,14 @@ def collect(now: datetime, with_prs: bool, stale_min: int) -> dict:
     }
 
     warnings: list[str] = []
+    open_sessions = [session for session in sessions if not session["closed"]]
+    for index, session in enumerate(open_sessions):
+        if session["claims_error"]:
+            warnings.append(f"文件占用记录无效：{session['id']} 的 files 应为 JSON 字符串数组")
+        for other in open_sessions[index + 1:]:
+            overlap = overlapping_files(session["files"], other["files"])
+            if overlap:
+                warnings.append(f"文件占用冲突：{session['id']} 与 {other['id']}：{', '.join(overlap[:5])}")
     git_ok_flag = resolve_git() is not None
     # 在 git 仓库里却调不动 git：worktree 聚合/分支信息全部失效，必须明确喊出来，
     # 不能静默显示「worktree 0 个 / ✅ 无告警」（手册 A3：假绿比报错更危险）
@@ -1190,6 +1232,9 @@ function sessionNode(s) {
   if (s.worktree) head.appendChild(el("span", "tag wt", "wt: " + s.worktree));
   node.appendChild(head);
   if (s.task) node.appendChild(el("div", "task", s.task));
+  if (s.files && s.files.length) node.appendChild(el("div", "meta", "文件范围：" + s.files.join("、")));
+  if (s.progress) node.appendChild(el("div", "meta", "进度：" + s.progress));
+  if (s.handoff) node.appendChild(el("div", "meta", "交接：" + s.handoff));
   const meta = el("div", "meta");
   meta.appendChild(el("span", "", "状态 " + s.status + "　·　心跳 "));
   meta.appendChild(el("span", ageClass(s), ageText(s)));
@@ -1821,7 +1866,7 @@ def run_web(port: int, stale_min: int, with_prs: bool, open_browser: bool,
             httpd = make_server(ROOT, port=candidate, stale_min=stale_min,
                                 with_prs=with_prs, bind=bind,
                                 password=password, directives=directives)
-            actual = candidate
+            actual = httpd.server_address[1]
             break
         except OSError:
             continue
@@ -1843,7 +1888,9 @@ def run_web(port: int, stale_min: int, with_prs: bool, open_browser: bool,
               if password else "  模式    只读分享（不能发指令）")
     print(f"  指挥    {'允许在网页上对 agent 下指令' if directives else '已关闭（只读）'}"
           f"；每 {WEB_REFRESH_SEC} 秒刷新；Ctrl+C 停止")
-    if actual != port:
+    if port == 0:
+        print(f"  （系统分配可用端口 {actual}）")
+    elif actual != port:
         print(f"  （默认端口 {port} 被占用，已自动改用 {actual}）")
     if open_browser:
         try:
@@ -1992,6 +2039,10 @@ def print_human(p: dict) -> None:
         print(f"      状态 {s['status']}   心跳 {age}{blocked_tag}")
         if s["task"]:
             print(f"      任务 {s['task'][:70]}")
+        if s.get("files"):
+            print(f"      文件 {', '.join(s['files'][:8])}")
+        if s.get("progress"):
+            print(f"      进度 {s['progress'][:100]}")
     print("  (● 活跃   ! 失活   ✓ 已结束)")
 
     # ---- 未答问题 ----

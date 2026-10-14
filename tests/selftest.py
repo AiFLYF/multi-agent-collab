@@ -108,7 +108,7 @@ import install as inst  # noqa: E402
 PY = sys.executable
 
 CORE_TARGETS = [dst for _src, dst, _zone in inst.CORE_FILES]
-PLATFORM_TARGETS = [dst for _src, dst in inst.PLATFORM_FILES.values()] + [inst.WORKBUDDY_TARGET]
+PLATFORM_TARGETS = [dst for _src, dst, _zone in inst.platform_files(inst.ALL_PLATFORMS)]
 
 
 def run(*args: str, cwd: Path, timeout: int = 90,
@@ -508,9 +508,9 @@ class TestInstallerE2E(unittest.TestCase):
         run("git", "branch", "develop", cwd=cls.proj)
         # 基础安装放在 setUpClass：test_02..test_19 都依赖主工作区已装好（含 worktree
         # 场景要从主工作区继承项目名）。放在 test_01 里会造成"单跑后续用例必挂"的顺序耦合。
-        r = install(cls.proj, "--project-name", "Demo 项目")
+        r = install(cls.proj, "--project-name", "Demo 项目", "--platforms", "all")
         if r.returncode != 0:
-            raise unittest.SkipTest(f"基础安装失败：{r.stdout + r.stderr}")
+            raise RuntimeError(f"基础安装失败：{r.stdout + r.stderr}")
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -885,17 +885,168 @@ class TestInstallerE2E(unittest.TestCase):
         self.assertTrue(any("feature/zombie" in w for w in warnings),
                         f"done 会话不该抑制 worktree 告警：{warnings}")
 
-    def test_19_non_utf8_exclude_warns_and_untouched(self) -> None:
-        """已有的非 UTF-8 exclude：给出警告且保留原字节，绝不静默写成'已最新'。"""
+    def test_19_non_utf8_exclude_fails_before_install(self) -> None:
+        """忽略无法写入时必须拒绝安装；不能生成一批未被忽略的私有文件。"""
         t = self.root / "gbk-exclude"
         t.mkdir(exist_ok=True)
         self.assertEqual(run("git", "init", "-q", cwd=t).returncode, 0)
         exclude = t / ".git" / "info" / "exclude"
         exclude.write_bytes(b"# \xff\xfe garbage\r\n/somedir/\n")
         r = install(t, "--platforms", "none")
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("非 UTF-8", r.stdout)
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("非 UTF-8", r.stdout + r.stderr)
         self.assertIn(b"\xff\xfe", exclude.read_bytes(), "原 exclude 字节不应被改写")
+        self.assertFalse((t / "AGENTS.md").exists())
+        self.assertFalse((t / ".agents").exists())
+
+    def fresh_project(self, name: str) -> Path:
+        target = self.root / name
+        target.mkdir()
+        r = run("git", "init", "-q", cwd=target)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return target
+
+    def test_20_native_selection_is_minimal_and_remembered(self) -> None:
+        target = self.fresh_project("native-only")
+        r = install(target, "--platforms", "codex,pi,codex,opencode")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        for rel in CORE_TARGETS:
+            self.assertTrue((target / rel).is_file(), rel)
+        for rel in PLATFORM_TARGETS + [".codex", ".opencode", ".pi"]:
+            self.assertFalse((target / rel).exists(), f"原生平台不应额外生成 {rel}")
+        meta_path = target / inst.INSTALL_META
+        before = meta_path.read_bytes()
+        self.assertEqual(json.loads(before)["platforms"], ["codex", "opencode", "pi"])
+        again = install(target)
+        self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
+        self.assertIn("新建/覆盖 0 个", again.stdout)
+        self.assertEqual(meta_path.read_bytes(), before, "幂等安装不重写安装时间")
+        self.assertEqual(run("git", "status", "--porcelain", cwd=target).stdout, "")
+
+    def test_21_first_noninteractive_install_requires_choice(self) -> None:
+        target = self.fresh_project("needs-choice")
+        exclude = target / ".git/info/exclude"
+        before = exclude.read_bytes()
+        r = install(target)
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("--platforms", r.stderr)
+        self.assertFalse((target / "AGENTS.md").exists())
+        self.assertEqual(exclude.read_bytes(), before)
+        for choice in ("", "all,codex", "all,unknown", "codxe"):
+            r = install(target, "--platforms", choice)
+            self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+            self.assertNotIn("Traceback", r.stderr)
+
+    def test_22_sync_adds_platforms_and_preserves_shared_content(self) -> None:
+        target = self.fresh_project("sync-add")
+        r = install(target, "--platforms", "codex")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        agents = target / "AGENTS.md"
+        agents.write_text(agents.read_text(encoding="utf-8") + "\n项目额外约定：保留整段。\n", encoding="utf-8")
+        startup = target / ".agents/START_HERE.md"
+        startup.write_text(startup.read_text(encoding="utf-8") + "\n启动补充：检查本地工单。\n", encoding="utf-8")
+        originals = {p: p.read_bytes() for p in (agents, startup)}
+        copilot = target / ".github/copilot-instructions.md"
+        copilot.parent.mkdir()
+        copilot.write_text("# 我的说明\n请使用项目术语。\n", encoding="utf-8")
+        r = run(PY, str(KIT / "install.py"), "sync", str(target),
+                "--platforms", "cursor,copilot,workbuddy", cwd=KIT)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        for p, original in originals.items():
+            self.assertEqual(p.read_bytes(), original, f"sync 不得覆盖 {p.name}")
+        self.assertIn("我的说明", copilot.read_text(encoding="utf-8"))
+        self.assertIn(".agents/START_HERE.md", copilot.read_text(encoding="utf-8"))
+        buddy = (target / inst.WORKBUDDY_TARGET).read_text(encoding="utf-8")
+        self.assertIn("项目额外约定：保留整段", buddy)
+        self.assertFalse((target / "CLAUDE.md").exists())
+        meta = inst.read_meta(target)
+        self.assertEqual(set(meta["platforms"]), {"codex", "cursor", "copilot", "workbuddy"})
+        r2 = run(PY, str(KIT / "install.py"), "sync", str(target), cwd=KIT)
+        self.assertEqual(r2.returncode, 0, r2.stdout + r2.stderr)
+        self.assertIn("新建/覆盖 0 个", r2.stdout)
+        self.assertEqual(copilot.read_text(encoding="utf-8").count(inst.ENTRY_BEGIN), 1)
+        for unrelated in (".github/workflows/build.yml", ".cursor/rules/team.mdc", ".windsurf/rules/team.md"):
+            chk = run("git", "check-ignore", "-q", unrelated, cwd=target)
+            self.assertEqual(chk.returncode, 1, f"不应隐藏其它配置：{unrelated}")
+
+    def test_23_legacy_platform_selection_migrates_without_expanding(self) -> None:
+        target = self.fresh_project("legacy-platforms")
+        r = install(target, "--platforms", "trae,claude")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        meta = inst.read_meta(target)
+        del meta["platforms"]
+        meta["kit_version"] = "1.4.1"
+        inst.write_lf(target / inst.INSTALL_META, json.dumps(meta))
+        r = install(target)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(set(inst.read_meta(target)["platforms"]), {"claude", "trae"})
+        for name in ("cursor", "copilot", "windsurf", "workbuddy"):
+            for _src, dst, _zone in inst.platform_files([name]):
+                self.assertFalse((target / dst).exists(), f"升级不能自动铺入 {dst}")
+
+    def test_24_doctor_fails_for_a_selected_missing_entry(self) -> None:
+        target = self.fresh_project("missing-entry")
+        r = install(target, "--platforms", "cursor")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        entry = target / ".cursor/rules/multi-agent-collab.mdc"
+        entry.unlink()
+        doctor = run(PY, str(KIT / "install.py"), "doctor", str(target), cwd=KIT, timeout=180)
+        self.assertEqual(doctor.returncode, 1, doctor.stdout + doctor.stderr)
+        self.assertIn("[FAIL] cursor: 已选平台入口缺失", doctor.stdout)
+        self.assertNotIn("[FAIL] claude", doctor.stdout)
+        r = run(PY, str(KIT / "install.py"), "sync", str(target), cwd=KIT)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue(entry.is_file())
+
+    def test_25_tracked_rules_are_not_overwritten(self) -> None:
+        target = self.fresh_project("tracked-rules")
+        agents = target / "AGENTS.md"
+        agents.write_text("# 团队已跟踪规则\n不可覆盖\n", encoding="utf-8")
+        self.assertEqual(run("git", "add", "AGENTS.md", cwd=target).returncode, 0)
+        original = agents.read_bytes()
+        index = run("git", "ls-files", "--stage", cwd=target).stdout
+        exclude = (target / ".git/info/exclude").read_bytes()
+        r = install(target, "--platforms", "codex")
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("已被 Git 跟踪", r.stderr)
+        self.assertEqual(agents.read_bytes(), original)
+        self.assertEqual(run("git", "ls-files", "--stage", cwd=target).stdout, index)
+        self.assertEqual((target / ".git/info/exclude").read_bytes(), exclude)
+        self.assertFalse((target / ".agents").exists())
+
+    def test_26_ignore_override_prevents_false_success(self) -> None:
+        target = self.fresh_project("ignore-override")
+        (target / ".gitignore").write_text("!AGENTS.md\n", encoding="utf-8")
+        r = install(target, "--platforms", "codex")
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("未被忽略", r.stderr)
+        self.assertFalse((target / "AGENTS.md").exists())
+        self.assertFalse((target / ".agents").exists())
+        self.assertEqual((target / ".gitignore").read_text(encoding="utf-8"), "!AGENTS.md\n")
+
+    def test_27_sync_dry_run_is_read_only(self) -> None:
+        target = self.fresh_project("sync-preview")
+        r = install(target, "--platforms", "none")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        before = {p.relative_to(target): p.read_bytes() for p in target.rglob("*") if p.is_file()}
+        r = run(PY, str(KIT / "install.py"), "sync", str(target),
+                "--platforms", "claude,windsurf", "--dry-run", cwd=KIT)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        after = {p.relative_to(target): p.read_bytes() for p in target.rglob("*") if p.is_file()}
+        self.assertEqual(before, after, "sync --dry-run 不应改动任何文件或平台记录")
+
+    def test_28_claude_imports_startup_and_retains_existing_notes(self) -> None:
+        target = self.fresh_project("claude-notes")
+        (target / "CLAUDE.md").write_text("# 本机说明\n先运行本项目 smoke。\n", encoding="utf-8")
+        r = install(target, "--platforms", "claude")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        text = (target / "CLAUDE.md").read_text(encoding="utf-8")
+        self.assertIn("先运行本项目 smoke", text)
+        self.assertIn("@AGENTS.md", text)
+        self.assertIn("@.agents/START_HERE.md", text)
+        r = install(target)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual((target / "CLAUDE.md").read_text(encoding="utf-8"), text)
 
 
 if __name__ == "__main__":

@@ -290,27 +290,36 @@
    * 改用 .copied 类改写 ::after，同时给读屏报一句。
    */
   function copyText(text, btn) {
+    function feedback(message, failed) {
+      if (!btn) return;
+      if (!btn.dataset.copyLabel) btn.dataset.copyLabel = btn.textContent;
+      clearTimeout(btn.copyTimer);
+      btn.textContent = message;
+      btn.style.color = failed ? 'var(--am)' : 'var(--cy)';
+      btn.copyTimer = setTimeout(function () { btn.textContent = btn.dataset.copyLabel; btn.style.color = ''; }, 1400);
+    }
     function ok() {
-      if (btn) {
-        var old = btn.textContent;
-        btn.textContent = '已复制 ✓';
-        btn.style.color = 'var(--cy)';
-        setTimeout(function () { btn.textContent = old; btn.style.color = ''; }, 1400);
-      }
+      feedback('已复制 ✓', false);
       announce('已复制到剪贴板');
+    }
+    function fail() {
+      feedback('请手动复制', true);
+      announce('未能写入剪贴板，请手动选择文本复制');
     }
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(ok, function () { fallback(); });
     } else { fallback(); }
     function fallback() {
+      var previousFocus = document.activeElement;
       var ta = document.createElement('textarea');
       ta.value = text;
       ta.style.position = 'fixed';
       ta.style.opacity = '0';
       document.body.appendChild(ta);
       ta.select();
-      try { document.execCommand('copy'); ok(); } catch (e) { /* 忽略 */ }
+      try { if (document.execCommand('copy')) ok(); else fail(); } catch (e) { fail(); }
       document.body.removeChild(ta);
+      if (previousFocus && previousFocus.focus) previousFocus.focus();
     }
   }
   $$('.copy[data-copy]').forEach(function (btn) {

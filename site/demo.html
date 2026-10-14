@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0b0e13">
+  <meta name="description" content="体验多 AI 协作看板：查看会话、模拟指令与回复、完成任务。所有内容均为本页演示数据。">
+  <title>协作看板交互演示 · multi-agent-collab</title>
+  <link rel="icon" href="assets/logo/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/fonts.css">
+  <link rel="stylesheet" href="assets/css/demo.css">
+  <script src="assets/js/demo.js" defer></script>
+</head>
+<body>
+  <a class="skip-demo" href="#demo-main">跳到演示内容</a>
+  <div class="demo-shell">
+    <header class="demo-nav">
+      <a class="demo-brand" href="index.html"><img src="assets/logo/mark.svg" width="30" height="30" alt=""><span>multi-agent-collab</span></a>
+      <nav aria-label="演示导航"><a href="index.html">返回介绍</a><a class="button primary" href="index.html#sec-6">安装到我的项目 <span aria-hidden="true">↗</span></a></nav>
+    </header>
+    <main id="demo-main">
+      <div class="demo-intro">
+        <div><p class="eyebrow">THE SHARED WORKSPACE / INTERACTIVE DEMO</p><h1>多个 AI，进度一眼可见。</h1><p class="intro-copy">查看谁在做什么，发一条演示指令，再把一个任务标记完成。</p></div>
+        <div class="demo-actions"><button id="demo-conflict" class="button" type="button">模拟文件占用冲突</button><button id="demo-reset" class="button" type="button">重置演示 <span aria-hidden="true">↺</span></button></div>
+      </div>
+      <p class="demo-notice"><span class="notice-dot" aria-hidden="true"></span><strong>示例数据</strong><span>操作仅在本页模拟，不读取你的项目，不向真实 agent 发送指令。刷新页面即可复原。</span></p>
+      <noscript><p class="demo-notice">请启用 JavaScript 体验交互，或返回介绍页查看看板截图和安装说明。</p></noscript>
+
+      <section class="metrics" aria-label="会话统计">
+        <div class="metric"><span>当前会话</span><strong id="metric-total">4</strong><small>一个共享工作区</small></div>
+        <div class="metric"><span><i class="dot active" aria-hidden="true"></i>活跃</span><strong id="metric-active">3</strong><small>正在推进任务</small></div>
+        <div class="metric"><span><i class="dot blocked" aria-hidden="true"></i>等待确认</span><strong id="metric-blocked">1</strong><small>需要协作回应</small></div>
+        <div class="metric"><span><i class="dot done" aria-hidden="true"></i>已完成</span><strong id="metric-done">0</strong><small>已留下收尾记录</small></div>
+      </section>
+
+      <div class="demo-grid">
+        <section aria-labelledby="sessions-title">
+          <div class="section-heading"><div><h2 id="sessions-title">工作中的会话</h2><span class="subtle mono">demo-shop / .agents/sessions</span></div><label class="filter-label">状态<select id="session-filter"><option value="all">全部会话</option><option value="active">活跃</option><option value="blocked">等待确认</option><option value="done">已完成</option></select></label></div>
+          <div id="demo-sessions" class="session-grid"></div>
+          <p id="session-empty" class="empty-state" hidden>没有这个状态的会话。试试其它筛选条件。</p>
+          <div class="workflow-note"><span class="step-number mono">01 → 02 → 03</span><p><strong>先协调，再开工，最后留记录。</strong><br>所有平台读取同一份总章，每个会话只更新自己的状态。</p><a href="index.html#sec-3">了解协作约定 ↗</a></div>
+        </section>
+
+        <aside class="side-stack">
+          <section class="panel" aria-labelledby="directive-title">
+            <div class="panel-heading"><h2 id="directive-title">发一条演示指令</h2><span class="small-badge">本页模拟</span></div>
+            <form id="demo-directive">
+              <label for="directive-target">发给谁</label>
+              <select id="directive-target" name="target"><option value="any">所有会话</option></select>
+              <label for="directive-body">指令内容</label>
+              <textarea id="directive-body" name="body" rows="3" maxlength="400" required placeholder="例如：完成后先补充测试结果，再继续下一步。"></textarea>
+              <div class="form-footer"><span>仅用于体验指令与回复流程</span><button class="button primary" type="submit">模拟发送 <span aria-hidden="true">↑</span></button></div>
+            </form>
+          </section>
+          <section class="panel" aria-labelledby="replies-title">
+            <div class="panel-heading"><h2 id="replies-title">指令与回复</h2><span class="subtle mono" id="reply-count">1 条</span></div>
+            <div id="demo-messages" class="messages"></div>
+          </section>
+        </aside>
+      </div>
+
+      <section class="panel timeline-panel" aria-labelledby="timeline-title">
+        <div class="panel-heading"><h2 id="timeline-title">共享工作记录</h2><span class="subtle mono">.agents/worklog / 演示时间线</span></div>
+        <ol id="demo-timeline" class="timeline"></ol>
+      </section>
+      <p id="demo-status" class="demo-status" role="status" aria-live="polite">试着给一个会话发指令，或者把任务标记完成。</p>
+    </main>
+    <footer class="demo-footer"><span>本页为交互示意，真实看板请在目标项目运行 <code>python tools/agents_status.py --web</code></span><a href="index.html#sec-6">选择平台并安装 →</a></footer>
+  </div>
+</body>
+</html>
