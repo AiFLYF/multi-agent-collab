@@ -9,7 +9,7 @@
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](#安装下载一次按项目复用)
 [![deps](https://img.shields.io/badge/dependencies-none-success)](#仓库结构与验证)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![changelog](https://img.shields.io/badge/changelog-1.6.0-orange)](CHANGELOG.md)
+[![changelog](https://img.shields.io/badge/changelog-1.7.0-orange)](CHANGELOG.md)
 
 让同一台电脑上、同一项目里的多个 AI 助手遵循一份协作规则：开工先确认谁在做什么，
 改动前避开冲突，收工留下能接手的记录。支持 Codex、Claude Code、OpenCode、Pi、Trae、

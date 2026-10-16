@@ -59,7 +59,7 @@ FUTURE_HB_TOL_MIN = 10      # 心跳比当前时刻快超过这么多 → 视为
 
 # 版本必须与 install.py 的 KIT_VERSION 保持一致（有测试锁定，防两边漂移）。
 # 看板独立分发到目标项目，不能 import 安装器，所以各存一份常量。
-BOARD_VERSION = "1.6.0"
+BOARD_VERSION = "1.7.0"
 
 # 人类可视化模式（--web / --html）：纯本机，不影响 JSON/终端模式与 agent 用法
 WEB_PORT_DEFAULT = 8731

@@ -41,7 +41,7 @@ from datetime import datetime
 from pathlib import Path
 
 KIT_ROOT = Path(__file__).resolve().parent
-KIT_VERSION = "1.6.0"   # 升级 kit 时记得改；会写进目标项目的 .agents/install.json
+KIT_VERSION = "1.7.0"   # 升级 kit 时记得改；会写进目标项目的 .agents/install.json
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(KIT_ROOT / "tools"))
 from agents_policy import POLICY_FILE, POLICY_DOC, build_policy, effective_policy, render_policy  # noqa: E402
