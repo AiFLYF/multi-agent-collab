@@ -50,7 +50,7 @@ class Rehearsal:
             raise AssertionError(name)
 
     def session(self, name, project, *args, expected=0):
-        return json.loads(self.run(name, sys.executable, project / "tools/agents_session.py",
+        return json.loads(self.run(name, sys.executable, project / ".multi-agent-collab/tools/agents_session.py",
                                    "--root", project, *args, "--json", cwd=project, expected=expected))
 
     def initialize(self, project, business=False):
@@ -79,17 +79,23 @@ class Rehearsal:
         self.initialize(first, business=True)
         self.initialize(second)
         installer = cached / "install.py"
-        self.run("从已提交版本首次安装 Codex", sys.executable, installer, "install", first, "--platforms", "codex")
+        # Rehearse the current reviewable source, including uncommitted new templates.
+        sources = {"install.py"} | {src for src, _dst, _zone in kit.CORE_FILES + kit.platform_files(kit.ALL_PLATFORMS)}
+        for relative in sources:
+            destination = cached / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(KIT / relative, destination)
+        self.run("从当前验收版本首次安装 Codex", sys.executable, installer, "install", first, "--platforms", "codex")
         self.check("原生安装不生成 Claude 入口", not (first / "CLAUDE.md").exists())
         self.run("同一副本安装第二个项目", sys.executable, installer, "install", second, "--platforms", "gemini,qwen")
         a, b = [json.loads((p / kit.INSTALL_META).read_text(encoding="utf-8")) for p in (first, second)]
         self.check("两个项目复用同一安装源", a["source_dir"] == b["source_dir"] == str(cached))
-        agents = first / "AGENTS.md"
+        agents = first / ".multi-agent-collab/RULES.md"
         text = agents.read_text(encoding="utf-8")
         text = kit.ZONE_RE.sub(lambda m: m[1] + "\n- 运行时：Python 3.8+\n- 测试：python -m unittest -q\n- 项目标记：REHEARSAL\n" + m[4]
                               if m[2] == "project-env" else m[0], text)
         kit.write_lf(agents, text)
-        note = first / ".agents/worklog/2000-01-01.md"
+        note = first / ".multi-agent-collab/worklog/2000-01-01.md"
         note.write_text("演练前已有的协作记录\n", encoding="utf-8")
         # clone 保留真实提交历史；仅覆盖本次要验证的发布源文件，不拷贝本机记忆或凭据。
         sources = {"install.py"} | {src for src, _dst, _zone in kit.CORE_FILES + kit.platform_files(kit.ALL_PLATFORMS)}
@@ -100,20 +106,24 @@ class Rehearsal:
         self.run("用当前工作区版本升级核心", sys.executable, installer, "install", first)
         self.check("升级保留项目定制和已有记录", "REHEARSAL" in agents.read_text(encoding="utf-8") and note.read_text(encoding="utf-8") == "演练前已有的协作记录\n")
         self.run("安装体检", sys.executable, installer, "doctor", first)
-        self.run("新对话开工摘要", sys.executable, first / "tools/agents_status.py", "--brief", cwd=first)
+        self.run("新对话开工摘要", sys.executable, first / ".multi-agent-collab/tools/agents_status.py", "--brief", cwd=first)
         self.run("创建业务任务分支", "git", "switch", "-c", "feature/cart-price", cwd=first)
+        self.run("暂存共享忽略配置", "git", "add", ".gitignore", cwd=first)
+        self.run("提交安装产生的共享忽略配置", "git", "commit", "-q", "-m", "chore: ignore private collaboration state", cwd=first)
         owner = self.session("登记 Codex 文件范围", first, "start", "--agent", "codex", "--task", "整理价格计算", "--files", "cart.py")
         self.session("阻止同工作区重复写任务", first, "start", "--agent", "claude", "--task", "重复任务", "--files", "README.md", expected=1)
         self.run("先创建独立分支引用", "git", "branch", "feature/docs", "develop", cwd=first)
         self.run("校验分支引用", "git", "rev-parse", "--verify", "feature/docs", cwd=first)
         self.run("建立独立文档工作区", "git", "worktree", "add", "-q", worker, "feature/docs", cwd=first)
         self.run("向 worktree 安装平台入口", sys.executable, installer, "install", worker, "--platforms", "claude")
+        self.run("暂存文档分支忽略配置", "git", "add", ".gitignore", cwd=worker)
+        self.run("提交文档分支忽略配置", "git", "commit", "-q", "-m", "chore: ignore private collaboration state", cwd=worker)
         conflict = self.session("阻止跨 worktree 的重复文件", worker, "start", "--agent", "claude", "--task", "冲突任务", "--files", "cart.py", expected=1)
         self.check("冲突原因确为文件范围", "文件范围重叠" in conflict["error"])
         peer = self.session("允许独立文件任务", worker, "start", "--agent", "claude", "--task", "完善项目说明", "--files", "README.md")
         log_path = self.root / "board-server.log"
         self.server_log = log_path.open("w", encoding="utf-8")
-        self.server = subprocess.Popen([sys.executable, "-u", str(first / "tools/agents_status.py"), "--web", "--port", "0", "--no-open"],
+        self.server = subprocess.Popen([sys.executable, "-u", str(first / ".multi-agent-collab/tools/agents_status.py"), "--web", "--port", "0", "--no-open"],
                                        cwd=first, stdout=self.server_log, stderr=subprocess.STDOUT)
         deadline = time.monotonic() + 20
         match = None
@@ -133,10 +143,10 @@ class Rehearsal:
                                          headers={"Content-Type": "application/json", "X-Mac-Board-Action": "1", "Origin": base})
         with urllib.request.urlopen(request, timeout=10) as response:
             directive = json.load(response)
-        self.check("网页指令真实落盘", (first / ".agents/inbox" / directive["file"]).is_file())
+        self.check("网页指令真实落盘", (first / ".multi-agent-collab/inbox" / directive["file"]).is_file())
         rejected = self.session("未答人类指令阻止新开工", worker, "start", "--agent", "roo", "--task", "新任务", "--files", "notes/", expected=1)
         self.check("阻止原因为人类 inbox", "人类指令" in rejected["error"])
-        question = first / ".agents/inbox" / directive["file"]
+        question = first / ".multi-agent-collab/inbox" / directive["file"]
         content = question.read_text(encoding="utf-8")
         kit.write_lf(question, content + "\n演练 agent 回执：已阅读并纳入任务，测试完成后补充结果。\n")
         self.check("已确认的执行事项仍保持待处理", bool(read_board()["inbox_open"]))
@@ -176,7 +186,7 @@ class Rehearsal:
         self.run("为第二项目选择 GitHub Flow", sys.executable, installer, "install", second, "--workflow", "github-flow")
         self.run("建立第二项目 main 基线", "git", "switch", "-c", "main", cwd=second)
         (second / "README.md").write_text("# 单主干演练项目\n", encoding="utf-8")
-        self.run("暂存第二项目演练基线", "git", "add", "README.md", cwd=second)
+        self.run("暂存第二项目演练基线", "git", "add", "README.md", ".gitignore", cwd=second)
         self.run("提交第二项目演练基线", "git", "commit", "-q", "-m", "test: seed single-main project", cwd=second)
         self.run("创建策略允许的任务分支", "git", "switch", "-c", "codex/policy-rehearsal", cwd=second)
         policy = self.session("读取实际生效的项目策略", second, "check", "--files", "README.md")
@@ -199,7 +209,7 @@ class Rehearsal:
         self.check("取消未修改原会话", session_path.read_text(encoding="utf-8") == old_text)
         self.session("原会话完成演练收尾", second, "finish", stale["id"], "--agent", "qwen", "--summary", "接管检查和取消已验证",
                      "--tests", "真实 CLI 检查、等待拒绝、取消保留均通过；未执行强制接管")
-        self.run("第二项目协作记录闭环", sys.executable, second / "tools/agents_status.py", "--brief", cwd=second)
+        self.run("第二项目协作记录闭环", sys.executable, second / ".multi-agent-collab/tools/agents_status.py", "--brief", cwd=second)
 
     def cleanup(self):
         if self.server is not None:

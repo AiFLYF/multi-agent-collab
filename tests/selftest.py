@@ -135,6 +135,18 @@ def install(proj: Path, *extra: str) -> subprocess.CompletedProcess:
 
 
 class TestBoardUnits(unittest.TestCase):
+    def test_workspace_aliases_share_identity(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="mac-path-alias-") as temporary:
+            root = Path(temporary)
+            (root / "child").mkdir()
+            self.assertEqual(board._norm(str(root)), board._norm(str(root / "child") + "/.."))
+            if os.name == "nt":
+                import ctypes
+                buffer = ctypes.create_unicode_buffer(32768)
+                length = ctypes.windll.kernel32.GetShortPathNameW(str(root), buffer, len(buffer))
+                if length and length < len(buffer):
+                    self.assertEqual(board._norm(str(root)), board._norm(buffer.value))
+
     def test_parse_helpers(self) -> None:
         self.assertEqual(board.status_word("active（干活中）"), "active")
         self.assertIsNotNone(board.parse_time("2025-01-15 10:00:00"))
@@ -456,22 +468,19 @@ class TestSingleSource(unittest.TestCase):
              "platforms/trae-rule.md", "platforms/workbuddy-header.md"]
 
     def test_exclude_entries_documented_everywhere(self) -> None:
-        for entry in inst.EXCLUDE_ENTRIES:
-            token = entry.lstrip("/")          # 文档里写 .agents/ 不带前导斜杠
-            for rel in self.FILES:
-                text = (KIT / rel).read_text(encoding="utf-8")
-                self.assertIn(token, text, f"{entry} 没有出现在 {rel}（清单漂移）")
+        # The directory and exact entries form the public installation contract.
+        self.assertIn("/.multi-agent-collab/", inst.EXCLUDE_ENTRIES)
+        for rel in ["README.md", "docs/RULES.md"]:
+            text = (KIT / rel).read_text(encoding="utf-8")
+            self.assertIn(".multi-agent-collab/", text)
+            self.assertIn(".gitignore", text)
+            self.assertIn("已跟踪", text)
 
     def test_no_extra_private_dirs_claimed(self) -> None:
-        """文档声称私有的 .xxx 目录，都必须在 EXCLUDE_ENTRIES 里（防再次漏掉 .workbuddy）。"""
-        claimed = set()
-        for rel in self.FILES:
-            text = (KIT / rel).read_text(encoding="utf-8")
-            claimed.update(re.findall(r"[/` ](\.(?:agents?|claude|trae|workbuddy[a-z-]*))[/`\s、，]",
-                                      text))
-        ignored = {e.strip("/") for e in inst.EXCLUDE_ENTRIES if e.startswith("/.")}
-        ghost = claimed - ignored
-        self.assertFalse(ghost, f"文档声称私有但未忽略的目录：{ghost}")
+        broad = {"/.agents/", "/.agent/", "/.claude/", "/.trae/", "/.workbuddy-ai/", "/.workbuddy/", "/tools/"}
+        self.assertFalse(broad & set(inst.EXCLUDE_ENTRIES))
+        for _src, dst, _zone in inst.platform_files(inst.ALL_PLATFORMS):
+            self.assertIn("/" + dst, inst.EXCLUDE_ENTRIES)
 
     def test_readme_e2e_count_matches_suite(self) -> None:
         """README 里的测试计数必须与套件实际数一致（防数字漂移）。"""
@@ -530,8 +539,9 @@ class TestInstallerE2E(unittest.TestCase):
         self.assertIn("Demo 项目", trae)
 
         buddy = (self.proj / inst.WORKBUDDY_TARGET).read_text(encoding="utf-8")
-        self.assertIn("WorkBuddy 入口", buddy)
-        self.assertIn("## 1. 分支铁律", buddy)
+        self.assertIn("WorkBuddy 协作入口", buddy)
+        self.assertIn(".multi-agent-collab/RULES.md", buddy)
+        self.assertNotIn("## 1. 分支铁律", buddy)
 
         for entry in inst.EXCLUDE_ENTRIES:
             probe = entry.lstrip("/").rstrip("/")
@@ -540,7 +550,7 @@ class TestInstallerE2E(unittest.TestCase):
             chk = run("git", "check-ignore", "-q", probe, cwd=self.proj)
             self.assertEqual(chk.returncode, 0, f"{entry} 没有被忽略")
 
-        br = run(PY, "tools/agents_status.py", "--json", cwd=self.proj)
+        br = run(PY, ".multi-agent-collab/tools/agents_status.py", "--json", cwd=self.proj)
         self.assertIn(br.returncode, (0, 1))
         self.assertEqual(json.loads(br.stdout)["sessions"], [])
 
@@ -555,7 +565,7 @@ class TestInstallerE2E(unittest.TestCase):
         r = install(self.proj, "--project-name", "Demo 项目")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         # 内容相同：不新建备份；backups 目录此时应该不存在
-        self.assertFalse((self.proj / ".agents/backups").exists(),
+        self.assertFalse((self.proj / ".multi-agent-collab/backups").exists(),
                          "二次相同安装不该产生任何备份")
         self.assertIn("新建/覆盖 0 个", r.stdout)
 
@@ -568,36 +578,27 @@ class TestInstallerE2E(unittest.TestCase):
         self.assertIn("新建/覆盖 0 个", r.stdout)
 
     def test_05_zone_preserved_on_upgrade(self) -> None:
+        rules = self.proj / ".multi-agent-collab/RULES.md"
+        original = rules.read_text(encoding="utf-8")
+        custom = original.replace("- 语言/运行时：", "- 我的门禁：cargo test --workspace\n- 语言/运行时：")
+        rules.write_text(custom, encoding="utf-8")
         agents = self.proj / "AGENTS.md"
-        claude = self.proj / "CLAUDE.md"
-        a_text = agents.read_text(encoding="utf-8")
-        a_text = a_text.replace("- 语言/运行时：",
-                                "- 语言/运行时：Rust 1.80（我的定制门禁）\n- 我的门禁：cargo test --workspace\n- 占位：")
-        # 锚句必须是定制区之外、模板里稳定存在的一句话（模板瘦身过，勿用已删的句子）
-        a_text = a_text.replace("你的首要职责不是快，而是",
-                                "你的首要职责不是快，而是<!-- 私自改的 -->")
-        agents.write_text(a_text, encoding="utf-8")
-        c_text = claude.read_text(encoding="utf-8").replace(
-            "- 运行时：", "- 运行时：Rust 1.80（定制）\n- 占位：")
-        claude.write_text(c_text, encoding="utf-8")
-
-        r = install(self.proj)
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        new_a = agents.read_text(encoding="utf-8")
-        new_c = claude.read_text(encoding="utf-8")
-        self.assertIn("cargo test --workspace", new_a, "AGENTS 定制区内容应被保留")
-        self.assertIn("Rust 1.80（定制）", new_c, "CLAUDE 定制区内容应被保留")
-        self.assertNotIn("私自改的", new_a, "非定制区应回到 kit 模板（旧版有备份）")
-        backups = list((self.proj / ".agents/backups").rglob("AGENTS.md*.bak"))
-        self.assertTrue(backups, "覆盖时应在 .agents/backups 留下备份")
-
-        # M8：备份绝不出现在 git status，根目录也不允许散落 .bak
-        status = run("git", "status", "--porcelain", cwd=self.proj).stdout
-        self.assertNotIn(".bak", status, f"备份污染 git status：\n{status}")
-        self.assertFalse(list(self.proj.glob("*.bak-*")))
+        project_rule = "\n项目额外要求：先读 architecture.md。\n"
+        agents.write_text(agents.read_text(encoding="utf-8") + project_rule, encoding="utf-8")
+        result = install(self.proj)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("cargo test --workspace", rules.read_text(encoding="utf-8"))
+        self.assertTrue(agents.read_text(encoding="utf-8").endswith(project_rule))
+        modified = rules.read_text(encoding="utf-8").replace("你的首要职责", "用户改写的协作职责")
+        rules.write_text(modified, encoding="utf-8")
+        result = install(self.proj)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("已修改或归属未知", result.stderr)
+        self.assertEqual(rules.read_text(encoding="utf-8"), modified)
+        rules.write_text(custom, encoding="utf-8")  # Restore the accepted zone edit for later integration cases.
 
     def test_06_troubleshooting_d_zone_migrated(self) -> None:
-        troubles = self.proj / ".agents/TROUBLESHOOTING.md"
+        troubles = self.proj / ".multi-agent-collab/TROUBLESHOOTING.md"
         # 用户在带标记的新版里追加 D 条目 → 升级原样保留
         text = troubles.read_text(encoding="utf-8").replace(
             "<!-- <<< mac:zone:project-troubles -->",
@@ -615,47 +616,28 @@ class TestInstallerE2E(unittest.TestCase):
         self.assertIn("支付沙箱每天凌晨重置", troubles.read_text(encoding="utf-8"))
 
     def test_07_legacy_troubleshooting_without_markers(self) -> None:
-        """无 mac:zone 标记的旧版手册：用户 D 条目自动迁移，A/B/C 以新版为准。"""
-        legacy = self.root / "legacy-tb"
-        legacy.mkdir(exist_ok=True)
-        run("git", "init", "-q", cwd=legacy)
-        # 先正常装一遍
-        r = install(legacy, "--platforms", "none")
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        tb = legacy / ".agents/TROUBLESHOOTING.md"
-        tb.write_text(
-            "# 老手册\n\n## T1 老掉牙的通用条目\n\n会被新版取代\n\n"
-            "## D3 老项目专属：内网 Maven 镜像每天 3 点抽风\n\n- 修复：换镜像\n\n"
-            "## D4 老项目专属：发版要关特性开关\n\n- 修复：检查开关\n",
-            encoding="utf-8")
-        r = install(legacy, "--platforms", "none")
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        new = tb.read_text(encoding="utf-8")
-        self.assertIn("内网 Maven 镜像每天 3 点抽风", new, "D3 应迁入")
-        self.assertIn("发版要关特性开关", new, "D4 应迁入")
-        self.assertIn("## B1", new, "通用部分应换成新版编号")
-        self.assertNotIn("老掉牙的通用条目", new, "旧通用条目不该残留")
-        self.assertIn("迁移了 2 条", r.stdout)
+        target = self.fresh_project("unmarked-troubles")
+        self.assertEqual(install(target, "--platforms", "none").returncode, 0)
+        path = target / ".multi-agent-collab/TROUBLESHOOTING.md"
+        original = "# 项目原手册\n\n## D3 保留全部约定\n不能只迁移部分内容。\n"
+        path.write_text(original, encoding="utf-8")
+        result = install(target, "--platforms", "none")
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(path.read_text(encoding="utf-8"), original)
 
     def test_08_gbk_files_and_unmarked_agents(self) -> None:
-        """非 UTF-8 的旧 AGENTS.md：不崩、字节备份、给出无法迁移的警告。"""
-        gbk = self.root / "legacy-gbk"
-        gbk.mkdir(exist_ok=True)
-        run("git", "init", "-q", cwd=gbk)
-        (gbk / "AGENTS.md").write_bytes(
-            "# 我们团队自己的规矩\r\n强制 code review\r\n".encode("gbk"))
-        r = install(gbk, "--platforms", "none")
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertNotIn("Traceback", r.stderr or "")
-        self.assertIn("无法自动迁移", r.stdout)
-        baks = list((gbk / ".agents/backups").rglob("AGENTS.md*.bak"))
-        self.assertEqual(len(baks), 1)
-        # 字节备份保留了 GBK 原文
-        self.assertIn("强制 code review".encode("gbk"), baks[0].read_bytes())
+        target = self.fresh_project("legacy-gbk")
+        original = "# 我们团队自己的规矩\r\n强制 code review\r\n".encode("gbk")
+        (target / "AGENTS.md").write_bytes(original)
+        result = install(target, "--platforms", "none")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("非 UTF-8", result.stderr)
+        self.assertEqual((target / "AGENTS.md").read_bytes(), original)
+        self.assertFalse((target / ".multi-agent-collab").exists())
 
     def test_09_board_subdir_and_sessions_semantics(self) -> None:
-        sdir = self.proj / ".agents/sessions"
-        idir = self.proj / ".agents/inbox"
+        sdir = self.proj / ".multi-agent-collab/sessions"
+        idir = self.proj / ".multi-agent-collab/inbox"
         hb = __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M")
         (sdir / "trae-251009-0900-aaaa.md").write_text(
             f"# S\n- agent: trae\n- branch: feature/order\n- status: active\n"
@@ -678,7 +660,7 @@ class TestInstallerE2E(unittest.TestCase):
 
         # 子目录运行：自动探测仓库根（JSON 输出在 stdout，不能混入提示行）
         sub = self.proj / "src"
-        r = run(PY, str(self.proj / "tools/agents_status.py"), "--json", cwd=sub)
+        r = run(PY, str(self.proj / ".multi-agent-collab/tools/agents_status.py"), "--json", cwd=sub)
         self.assertEqual(r.returncode, 1, r.stderr)
         data = json.loads(r.stdout)  # stdout 必须是纯 JSON
         ids = {s["id"]: s for s in data["sessions"]}
@@ -691,7 +673,7 @@ class TestInstallerE2E(unittest.TestCase):
         self.assertEqual(data["inbox_open"][0]["date"], hb, "应兼容 created 字段")
 
         # 人类模式也不崩
-        r2 = run(PY, str(self.proj / "tools/agents_status.py"), cwd=sub)
+        r2 = run(PY, str(self.proj / ".multi-agent-collab/tools/agents_status.py"), cwd=sub)
         self.assertIn(r2.returncode, (0, 1))
         self.assertNotIn("Traceback", r2.stdout + r2.stderr)
 
@@ -714,7 +696,7 @@ class TestInstallerE2E(unittest.TestCase):
         # 在该 worktree 补齐安装：项目名应从主工作区 install.json 继承（不叫 demo-wt）
         i = install(wt)
         self.assertEqual(i.returncode, 0, i.stdout + i.stderr)
-        self.assertTrue((wt / "tools/agents_status.py").is_file())
+        self.assertTrue((wt / ".multi-agent-collab/tools/agents_status.py").is_file())
         trae_wt = (wt / ".trae/rules/git-flow-agent.md").read_text(encoding="utf-8")
         self.assertIn("Demo 项目", trae_wt)
         d2 = run(PY, str(KIT / "install.py"), "doctor", str(wt), cwd=KIT, timeout=180)
@@ -726,7 +708,7 @@ class TestInstallerE2E(unittest.TestCase):
         time.sleep(1.0)
         (wt / "src").mkdir(exist_ok=True)
         (wt / "src/coupon.py").write_text("# coupon\n", encoding="utf-8")
-        br = run(PY, "tools/agents_status.py", "--json", cwd=self.proj)
+        br = run(PY, ".multi-agent-collab/tools/agents_status.py", "--json", cwd=self.proj)
         data = json.loads(br.stdout)
         # M2：主工作区自己不许自告警；linked wt 改动要告警
         warned_paths = [w.split("（分支", 1)[0].replace("未注册 worktree：", "").strip()
@@ -741,13 +723,13 @@ class TestInstallerE2E(unittest.TestCase):
         self.assertIn(wt_real, warned_paths)
         self.assertIn("feature/coupon", "\n".join(data["warnings"]))
 
-        # 在 worktree 注册会话（拷整个 .agents 过去是 AGENTS.md 规定做法）
-        shutil.copytree(self.proj / ".agents", wt / ".agents", dirs_exist_ok=True)
-        (wt / ".agents/sessions/claude-251009-1000-dddd.md").write_text(
+        # 在 worktree 注册会话（拷整个 .multi-agent-collab 过去是 AGENTS.md 规定做法）
+        shutil.copytree(self.proj / ".multi-agent-collab", wt / ".multi-agent-collab", dirs_exist_ok=True)
+        (wt / ".multi-agent-collab/sessions/claude-251009-1000-dddd.md").write_text(
             "# S\n- agent: claude\n- branch: feature/coupon\n- status: active\n"
             f"- heartbeat: {__import__('datetime').datetime.now():%Y-%m-%d %H:%M}\n",
             encoding="utf-8")
-        br2 = run(PY, "tools/agents_status.py", "--json", cwd=self.proj)
+        br2 = run(PY, ".multi-agent-collab/tools/agents_status.py", "--json", cwd=self.proj)
         data2 = json.loads(br2.stdout)
         ids = {s["id"] for s in data2["sessions"]}
         self.assertIn("claude-251009-1000-dddd", ids, "主看板必须看到 worktree 里注册的会话")
@@ -761,7 +743,9 @@ class TestInstallerE2E(unittest.TestCase):
         r = run(PY, str(KIT / "install.py"), "mirror", str(self.proj), cwd=KIT)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         buddy = (self.proj / inst.WORKBUDDY_TARGET).read_text(encoding="utf-8")
-        self.assertIn("镜像测试标记", buddy)
+        self.assertIn(".multi-agent-collab/RULES.md", buddy)
+        self.assertIn("镜像测试标记", agents.read_text(encoding="utf-8"))
+        self.assertNotIn("镜像测试标记", buddy)
 
     def test_12_dry_run_writes_nothing(self) -> None:
         target = self.root / "dryrun-target"
@@ -779,57 +763,28 @@ class TestInstallerE2E(unittest.TestCase):
         self.assertIn(f"套件版本 {inst.KIT_VERSION}", d.stdout)
 
     def test_14_uninstall_safe_and_purge_keeps_user_data(self) -> None:
-        t = self.root / "uninst"
-        t.mkdir()
-        self.assertEqual(run("git", "init", "-q", cwd=t).returncode, 0)
-        r = install(t, "--platforms", "none")
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        # 安装到真实 git 仓库：exclude 必须先在位，后面才有"摘除"可验证
-        self.assertIn(inst.MARK_BEGIN,
-                      (t / ".git/info/exclude").read_text(encoding="utf-8"))
-
-        # 制造三类"用户资产"：定制区、D 组条目、真实会话
-        agents = t / "AGENTS.md"
-        agents.write_text(agents.read_text(encoding="utf-8").replace(
-            "- 语言/运行时：", "- 语言/运行时：Elixir 1.17（卸载测试）\n- 占位："),
-            encoding="utf-8")
-        tb = t / ".agents/TROUBLESHOOTING.md"
-        tb.write_text(tb.read_text(encoding="utf-8").replace(
-            "<!-- <<< mac:zone:project-troubles -->",
-            "## D2 卸载测试专属坑\n\n- 修复：别删我\n\n<!-- <<< mac:zone:project-troubles -->"),
-            encoding="utf-8")
-        (t / ".agents/sessions/trae-250115-1200-abcd.md").write_text(
-            "# S\n- agent: trae\n- branch: feature/x\n- status: done\n"
-            "- heartbeat: 2025-01-15 12:00\n", encoding="utf-8")
-        install(t, "--platforms", "none")   # 让定制落定
-
-        # 1) 默认卸载：只摘托管块，文件全留，忽略随之失效
-        u1 = run(PY, str(KIT / "install.py"), "uninstall", str(t), cwd=KIT)
-        self.assertEqual(u1.returncode, 0, u1.stdout + u1.stderr)
-        exclude = (t / ".git/info/exclude").read_text(encoding="utf-8")
-        self.assertNotIn(inst.MARK_BEGIN, exclude)
-        chk = run("git", "check-ignore", "-q", "AGENTS.md", cwd=t)
-        self.assertNotEqual(chk.returncode, 0, "托管块摘除后 AGENTS.md 应不再被忽略")
-        self.assertTrue((t / "AGENTS.md").is_file())
-        self.assertTrue((t / "tools/agents_status.py").is_file())
-
-        # 2) --purge-files：未改过的删掉，用户资产全部保留
-        u2 = run(PY, str(KIT / "install.py"), "uninstall", str(t),
-                 "--purge-files", cwd=KIT)
-        self.assertEqual(u2.returncode, 0, u2.stdout + u2.stderr)
-        self.assertFalse((t / "tools/agents_status.py").exists(),
-                         "未修改的看板应被删除")
-        self.assertFalse((t / inst.INSTALL_META).exists())
-        self.assertTrue((t / "AGENTS.md").is_file(), "定制过的 AGENTS.md 必须保留")
-        self.assertIn("Elixir 1.17（卸载测试）", agents.read_text(encoding="utf-8"))
-        kept_tb = tb.read_text(encoding="utf-8")
-        self.assertIn("卸载测试专属坑", kept_tb, "D 组条目必须保留")
-        self.assertTrue((t / ".agents/sessions/trae-250115-1200-abcd.md").is_file(),
-                        "真实会话文件永不删除")
-        self.assertIn("保留（含你的定制/数据）", u2.stdout)
+        target = self.fresh_project("uninstall")
+        original = "# 项目规则\nElixir 1.17（卸载测试）\n"
+        (target / "AGENTS.md").write_text(original, encoding="utf-8")
+        self.assertEqual(install(target, "--platforms", "none").returncode, 0)
+        record = target / ".multi-agent-collab/sessions/trae-250115-1200-abcd.md"
+        record.write_text("# 我的会话记录\n", encoding="utf-8")
+        rules = target / ".multi-agent-collab/RULES.md"
+        rules.write_text(rules.read_text(encoding="utf-8") + "\n自定义规则\n", encoding="utf-8")
+        for extra in ([], ["--purge-files"], ["--purge-files"]):
+            result = run(PY, str(KIT / "install.py"), "uninstall", str(target), *extra, cwd=KIT)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertTrue((target / "AGENTS.md").read_text(encoding="utf-8").startswith(original))
+            self.assertNotIn(inst.ENTRY_BEGIN, (target / "AGENTS.md").read_text(encoding="utf-8"))
+            self.assertEqual(record.read_text(encoding="utf-8"), "# 我的会话记录\n")
+            self.assertIn("自定义规则", rules.read_text(encoding="utf-8"))
+            self.assertEqual(run("git", "check-ignore", "-q", str(record), cwd=target).returncode, 0)
+        self.assertFalse((target / ".multi-agent-collab/tools/agents_status.py").exists())
+        self.assertTrue((target / inst.INSTALL_META).exists())
 
     def test_15_exclude_has_workbuddy_dir(self) -> None:
-        self.assertIn("/.workbuddy/", inst.EXCLUDE_ENTRIES)
+        self.assertIn("/.workbuddy-ai/git-flow-agent.md", inst.EXCLUDE_ENTRIES)
+        self.assertNotIn("/.workbuddy/", inst.EXCLUDE_ENTRIES)
 
     def test_16_self_install_rejected(self) -> None:
         """把 kit 自己（含其子目录）当安装目标必须拒绝，防止模板被自迁移污染。"""
@@ -873,14 +828,14 @@ class TestInstallerE2E(unittest.TestCase):
         r = run("git", "worktree", "add", "-q", str(wt), "-b",
                 "feature/zombie", "develop", cwd=self.proj)
         self.assertEqual(r.returncode, 0, r.stderr)
-        sdir = wt / ".agents" / "sessions"
+        sdir = wt / ".multi-agent-collab" / "sessions"
         sdir.mkdir(parents=True)
         (sdir / "human-251008-0600-zz99.md").write_text(
             "# S\n- agent: human\n- branch: feature/zombie\n- status: done\n"
             "- heartbeat: 2026-10-08 06:00\n", encoding="utf-8")
         time.sleep(1.0)
         (wt / "zombie.txt").write_text("x\n", encoding="utf-8")
-        br = run(PY, "tools/agents_status.py", "--json", cwd=self.proj)
+        br = run(PY, ".multi-agent-collab/tools/agents_status.py", "--json", cwd=self.proj)
         warnings = json.loads(br.stdout)["warnings"]
         self.assertTrue(any("feature/zombie" in w for w in warnings),
                         f"done 会话不该抑制 worktree 告警：{warnings}")
@@ -897,7 +852,7 @@ class TestInstallerE2E(unittest.TestCase):
         self.assertIn("非 UTF-8", r.stdout + r.stderr)
         self.assertIn(b"\xff\xfe", exclude.read_bytes(), "原 exclude 字节不应被改写")
         self.assertFalse((t / "AGENTS.md").exists())
-        self.assertFalse((t / ".agents").exists())
+        self.assertFalse((t / ".multi-agent-collab").exists())
 
     def fresh_project(self, name: str) -> Path:
         target = self.root / name
@@ -921,7 +876,7 @@ class TestInstallerE2E(unittest.TestCase):
         self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
         self.assertIn("新建/覆盖 0 个", again.stdout)
         self.assertEqual(meta_path.read_bytes(), before, "幂等安装不重写安装时间")
-        self.assertEqual(run("git", "status", "--porcelain", cwd=target).stdout, "")
+        self.assertEqual(run("git", "status", "--porcelain", cwd=target).stdout, "?? .gitignore\n")
 
     def test_21_first_noninteractive_install_requires_choice(self) -> None:
         target = self.fresh_project("needs-choice")
@@ -943,7 +898,7 @@ class TestInstallerE2E(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         agents = target / "AGENTS.md"
         agents.write_text(agents.read_text(encoding="utf-8") + "\n项目额外约定：保留整段。\n", encoding="utf-8")
-        startup = target / ".agents/START_HERE.md"
+        startup = target / ".multi-agent-collab/START_HERE.md"
         startup.write_text(startup.read_text(encoding="utf-8") + "\n启动补充：检查本地工单。\n", encoding="utf-8")
         originals = {p: p.read_bytes() for p in (agents, startup)}
         copilot = target / ".github/copilot-instructions.md"
@@ -955,9 +910,10 @@ class TestInstallerE2E(unittest.TestCase):
         for p, original in originals.items():
             self.assertEqual(p.read_bytes(), original, f"sync 不得覆盖 {p.name}")
         self.assertIn("我的说明", copilot.read_text(encoding="utf-8"))
-        self.assertIn(".agents/START_HERE.md", copilot.read_text(encoding="utf-8"))
+        self.assertIn(".multi-agent-collab/START_HERE.md", copilot.read_text(encoding="utf-8"))
         buddy = (target / inst.WORKBUDDY_TARGET).read_text(encoding="utf-8")
-        self.assertIn("项目额外约定：保留整段", buddy)
+        self.assertIn(".multi-agent-collab/RULES.md", buddy)
+        self.assertNotIn("项目额外约定：保留整段", buddy)
         self.assertFalse((target / "CLAUDE.md").exists())
         meta = inst.read_meta(target)
         self.assertEqual(set(meta["platforms"]), {"codex", "cursor", "copilot", "workbuddy"})
@@ -1001,18 +957,16 @@ class TestInstallerE2E(unittest.TestCase):
     def test_25_tracked_rules_are_not_overwritten(self) -> None:
         target = self.fresh_project("tracked-rules")
         agents = target / "AGENTS.md"
-        agents.write_text("# 团队已跟踪规则\n不可覆盖\n", encoding="utf-8")
+        original = b"# Team rules\r\nRun project tests.\r\n"
+        agents.write_bytes(original)
         self.assertEqual(run("git", "add", "AGENTS.md", cwd=target).returncode, 0)
-        original = agents.read_bytes()
         index = run("git", "ls-files", "--stage", cwd=target).stdout
-        exclude = (target / ".git/info/exclude").read_bytes()
-        r = install(target, "--platforms", "codex")
-        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
-        self.assertIn("已被 Git 跟踪", r.stderr)
-        self.assertEqual(agents.read_bytes(), original)
+        result = install(target, "--platforms", "codex")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(agents.read_bytes().startswith(original))
+        self.assertEqual(agents.read_text(encoding="utf-8").count(inst.ENTRY_BEGIN), 1)
         self.assertEqual(run("git", "ls-files", "--stage", cwd=target).stdout, index)
-        self.assertEqual((target / ".git/info/exclude").read_bytes(), exclude)
-        self.assertFalse((target / ".agents").exists())
+        self.assertIn("AGENTS.md", run("git", "diff", "--name-only", cwd=target).stdout)
 
     def test_26_ignore_override_prevents_false_success(self) -> None:
         target = self.fresh_project("ignore-override")
@@ -1021,8 +975,8 @@ class TestInstallerE2E(unittest.TestCase):
         self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
         self.assertIn("未被忽略", r.stderr)
         self.assertFalse((target / "AGENTS.md").exists())
-        self.assertFalse((target / ".agents").exists())
-        self.assertEqual((target / ".gitignore").read_text(encoding="utf-8"), "!AGENTS.md\n")
+        self.assertFalse((target / ".multi-agent-collab").exists())
+        self.assertTrue((target / ".gitignore").read_text(encoding="utf-8").startswith("!AGENTS.md\n"))
 
     def test_27_sync_dry_run_is_read_only(self) -> None:
         target = self.fresh_project("sync-preview")
@@ -1043,7 +997,7 @@ class TestInstallerE2E(unittest.TestCase):
         text = (target / "CLAUDE.md").read_text(encoding="utf-8")
         self.assertIn("先运行本项目 smoke", text)
         self.assertIn("@AGENTS.md", text)
-        self.assertIn("@.agents/START_HERE.md", text)
+        self.assertIn("@.multi-agent-collab/START_HERE.md", text)
         r = install(target)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual((target / "CLAUDE.md").read_text(encoding="utf-8"), text)

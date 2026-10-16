@@ -6,6 +6,8 @@ import json
 import re
 from pathlib import Path
 
+from agents_layout import state_path
+
 POLICY_FILE = ".agents/policy.json"
 POLICY_DOC = ".agents/POLICY.md"
 ALWAYS_PROTECTED = {"main", "master", "develop"}
@@ -58,7 +60,7 @@ def validate_policy(value):
 
 
 def read_policy(root: Path):
-    path = root / POLICY_FILE
+    path = state_path(root, "policy.json")
     try:
         path.resolve().relative_to(root.resolve())
     except ValueError:

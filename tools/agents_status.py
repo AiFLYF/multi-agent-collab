@@ -59,11 +59,13 @@ FUTURE_HB_TOL_MIN = 10      # 心跳比当前时刻快超过这么多 → 视为
 
 # 版本必须与 install.py 的 KIT_VERSION 保持一致（有测试锁定，防两边漂移）。
 # 看板独立分发到目标项目，不能 import 安装器，所以各存一份常量。
-BOARD_VERSION = "1.6.0"
+BOARD_VERSION = "1.7.0"
 
 # 人类可视化模式（--web / --html）：纯本机，不影响 JSON/终端模式与 agent 用法
 WEB_PORT_DEFAULT = 8731
 WEB_REFRESH_SEC = 5
+from agents_layout import state_path, state_dir
+
 SNAPSHOT_DEFAULT = ".agents/board.html"
 
 # 人类指令通道（网页 → .agents/inbox/）
@@ -233,6 +235,12 @@ def status_word(raw: str) -> str:
 
 
 def _norm(p: str) -> str:
+    # Git reports long paths while cwd/TEMP can use Windows 8.3 aliases.
+    # Resolve filesystem aliases before deciding whether a worktree is ourselves.
+    try:
+        p = str(Path(p).resolve())
+    except (OSError, RuntimeError):
+        pass  # Missing/inaccessible worktrees still get a stable lexical key.
     return p.replace("\\", "/").rstrip("/").lower()
 
 
@@ -241,12 +249,12 @@ def detect_root(explicit: str | None) -> Path:
     if explicit:
         return Path(explicit).resolve()
     cwd = Path.cwd()
-    if (cwd / ".agents").is_dir():
+    if (state_path(cwd)).is_dir():
         return cwd
     top_raw = _git_at(cwd, "rev-parse", "--show-toplevel").strip()
     if top_raw:
         top = Path(top_raw).resolve()
-        if (top / ".agents").is_dir() and top != cwd:
+        if (state_path(top)).is_dir() and top != cwd:
             rel = str(cwd.relative_to(top)) if top in cwd.parents else str(cwd)
             print(f"提示：当前目录（{rel}）没有 .agents/，已改用仓库根 {top}",
                   file=sys.stderr)
@@ -283,11 +291,11 @@ def agent_roots() -> list[tuple[Path, bool]]:
     for row in rows:
         p = Path(row["path"])
         is_main = _norm(str(p)) == root_norm
-        if (p / ".agents").is_dir():
+        if (state_path(p)).is_dir():
             found.append((p, is_main))
     # git 认为的主工作区可能不是当前 ROOT（从 linked worktree 里跑看板时，
     # git 的"主"是另一个目录）。此时以 ROOT 为"当前工作区"，其余都算别的 worktree。
-    if not any(p == ROOT for p, _ in found) and (ROOT / ".agents").is_dir():
+    if not any(p == ROOT for p, _ in found) and (state_path(ROOT)).is_dir():
         found.insert(0, (ROOT, False))
     if not found:
         found = [(ROOT, True)]
@@ -326,7 +334,7 @@ def load_sessions(roots: list[tuple[Path, bool]], now: datetime,
                   stale_min: int) -> list[dict]:
     out: dict[str, dict] = {}
     for root, is_main in roots:
-        sdir = root / ".agents" / "sessions"
+        sdir = state_path(root, "sessions")
         if not sdir.is_dir():
             continue
         tag = "" if is_main else str(root)
@@ -406,7 +414,7 @@ def _inbox_body_reply(text: str) -> tuple[str, str]:
 def load_inbox(roots: list[tuple[Path, bool]]) -> list[dict]:
     seen: dict[str, dict] = {}
     for root, _is_main in roots:
-        idir = root / ".agents" / "inbox"
+        idir = state_path(root, "inbox")
         if not idir.is_dir():
             continue
         for f in sorted(idir.glob("Q-*.md")):
@@ -514,7 +522,7 @@ def check_serve_options(bind: str, directives: bool, password: str | None) -> st
 def load_worklogs(roots: list[tuple[Path, bool]], n: int = 3) -> list[dict]:
     seen: dict[str, dict] = {}
     for root, _is_main in roots:
-        ldir = root / ".agents" / "worklog"
+        ldir = state_path(root, "worklog")
         if not ldir.is_dir():
             continue
         for f in sorted(ldir.glob("[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].md")):
@@ -762,9 +770,9 @@ def selfcheck() -> int:
               and check_serve_options("127.0.0.1", True, None) is None)
 
         # 2) 造一个完整 .agents 场景
-        sdir = tmp / ".agents" / "sessions"
-        idir = tmp / ".agents" / "inbox"
-        ldir = tmp / ".agents" / "worklog"
+        sdir = state_path(tmp, "sessions")
+        idir = state_path(tmp, "inbox")
+        ldir = state_path(tmp, "worklog")
         for d in (sdir, idir, ldir):
             d.mkdir(parents=True)
         (sdir / "_template.md").write_text("模板，不该被解析\n", encoding="utf-8")
@@ -1640,6 +1648,8 @@ def render_html(payload: dict | None, live: bool) -> str:
     """渲染自包含 HTML 看板。live=True 给 --web（JS 轮询 /data）；
     False 给 --html 快照（数据内嵌、离线可开）。"""
     return (_DASHBOARD_HTML
+            .replace(".agents/", state_dir(ROOT) + "/")
+            .replace("python tools/agents_", "python " + (state_dir(ROOT) + "/" if state_dir(ROOT) != ".agents" else "") + "tools/agents_")
             .replace("__DATA__", _embed_json(payload))
             .replace("__LIVE__", "true" if live else "false")
             .replace("__REFRESH__", str(WEB_REFRESH_SEC)))
@@ -1841,7 +1851,7 @@ def make_server(root: Path, port: int = 0, stale_min: int = STALE_MIN_DEFAULT,
                     self._json(400, {"error": f"目标会话不存在：{to}（选 any 或当前会话）"})
                     return
             try:
-                dest = create_directive(ROOT / ".agents" / "inbox", to, body, name)
+                dest = create_directive(state_path(ROOT, "inbox"), to, body, name)
             except ValueError as e:
                 self._json(400, {"error": str(e)})
                 return
@@ -1958,7 +1968,7 @@ def main(argv: list[str] | None = None) -> int:
     payload = collect(datetime.now(), args.prs, args.stale_min)
 
     if args.html is not None:
-        out = Path(args.html)
+        out = state_path(ROOT, "board.html") if args.html == SNAPSHOT_DEFAULT else Path(args.html)
         if not out.is_absolute():
             out = ROOT / out
         _write_lf_atomic(out, render_html(payload, live=False))

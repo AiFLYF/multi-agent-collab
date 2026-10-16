@@ -20,7 +20,7 @@
 
 ## 开工检查
 
-1. 读当前任务涉及的规则。根总章和启动清单每个新对话读一次；字段格式不熟悉再读 `.agents/README.md`。
+1. 读当前任务涉及的规则。根总章和启动清单每个新对话读一次；字段格式不熟悉再读 `.multi-agent-collab/README.md`。
 2. 查看 `git status --short --branch`、看板、相关 inbox 和近 1–2 天日志。
 3. 准备写代码时，按总章 fetch、查 open PR、交叉检查构建进程与 reflog，确认没有重复任务。
 4. 有 GitHub 远端才查该仓库的 PR；本地仓库没有远端时说明这一点，不添加未知远端。
@@ -39,7 +39,7 @@ python <套件目录>/install.py install <项目> --workflow custom --base-branc
 - `git-flow`：默认基线 develop，允许 feature/、release/、hotfix/。
 - `github-flow`：默认基线 main，允许 feature/、fix/、docs/、chore/、codex/。
 - `custom`：明确基线和任务前缀。无论哪种策略，main、master、develop 和所选基线都受保护。
-- `.agents/policy.json` 保存配置，`POLICY.md` 是安装器生成的阅读入口。用安装命令修改，先 `--dry-run` 预览。
+- `.multi-agent-collab/policy.json` 保存配置，`POLICY.md` 是安装器生成的阅读入口。用安装命令修改，先 `--dry-run` 预览。
 - 在同一仓库的主 worktree 修改策略，再对其它 worktree 执行 sync。会话工具始终优先读主策略，不会用旧副本放行。
 - 已有会话仍可更新进度、handoff 或 finish；恢复写入和扩大文件范围要符合新策略。
 
@@ -50,10 +50,10 @@ python <套件目录>/install.py install <项目> --workflow custom --base-branc
 以下 `<ID>` 都是 `start` 实际返回的会话 ID，不能直接照抄尖括号。
 
 ```text
-python tools/agents_session.py start --agent codex --task "完善登录校验" --files src/login.py tests/test_login.py --json
-python tools/agents_session.py heartbeat <ID> --agent codex --note "正在运行回归测试"
-python tools/agents_session.py heartbeat <ID> --agent codex --files src/login.py tests/test_login.py docs/login.md
-python tools/agents_session.py check --agent codex --session <ID> --files src/login.py --json
+python .multi-agent-collab/tools/agents_session.py start --agent codex --task "完善登录校验" --files src/login.py tests/test_login.py --json
+python .multi-agent-collab/tools/agents_session.py heartbeat <ID> --agent codex --note "正在运行回归测试"
+python .multi-agent-collab/tools/agents_session.py heartbeat <ID> --agent codex --files src/login.py tests/test_login.py docs/login.md
+python .multi-agent-collab/tools/agents_session.py check --agent codex --session <ID> --files src/login.py --json
 ```
 
 - 文件范围是相对于当前项目根目录的完整列表；目录以 `/` 结尾，不使用通配符或 `..`。
@@ -67,9 +67,9 @@ python tools/agents_session.py check --agent codex --session <ID> --files src/lo
 ## 中断、恢复、交接与收尾
 
 ```text
-python tools/agents_session.py handoff <ID> --agent codex --summary "已完成什么；待办和阻塞；未提交文件、测试结果与相关 PR"
-python tools/agents_session.py resume <ID> --agent codex --note "阻塞已解除，继续原任务"
-python tools/agents_session.py finish <ID> --agent codex --summary "实现与验收结果" --tests "实际运行的命令和结果"
+python .multi-agent-collab/tools/agents_session.py handoff <ID> --agent codex --summary "已完成什么；待办和阻塞；未提交文件、测试结果与相关 PR"
+python .multi-agent-collab/tools/agents_session.py resume <ID> --agent codex --note "阻塞已解除，继续原任务"
+python .multi-agent-collab/tools/agents_session.py finish <ID> --agent codex --summary "实现与验收结果" --tests "实际运行的命令和结果"
 ```
 
 `handoff` 将会话置为 blocked，保留文件占用，并写一条来自该会话的交接留言。
