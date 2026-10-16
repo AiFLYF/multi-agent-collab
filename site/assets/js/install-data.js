@@ -1,6 +1,6 @@
 // 由 scripts/sync_install_docs.py 生成，请修改安装器或提示词模板。
 window.MAC_INSTALL = {
-  "version": "1.6.0",
+  "version": "1.7.0",
   "platforms": [
     {
       "id": "codex",
