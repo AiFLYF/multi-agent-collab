@@ -20,7 +20,7 @@ DEFAULT_SELECTION = (
     + "。使用对应的 --platforms 名称；不要根据电脑里装过哪些软件就全部安装。"
 )
 DEFAULT_WORKFLOW = (
-    "读取项目现有分支约定与 .agents/policy.json；已有策略沿用，首次安装按已确认流程选择 git-flow、github-flow 或 custom。"
+    "读取项目现有分支约定与 .multi-agent-collab/policy.json；已有策略沿用，首次安装按已确认流程选择 git-flow、github-flow 或 custom。"
     "只有 main 的项目可使用 github-flow；无法确认时只询问分支流程，不擅自建立 develop 或改变远端结构。"
 )
 
@@ -56,7 +56,7 @@ def outputs() -> dict[Path, str]:
         raise ValueError("展示页必须包含一个 prompt-agent 代码块")
     data = {"version": kit.KIT_VERSION, "platforms": catalog,
             "coreFiles": [dst for _src, dst, _zone in kit.CORE_FILES]
-                         + [kit.POLICY_FILE, kit.POLICY_DOC, kit.INSTALL_META],
+                         + [kit.POLICY_FILE, kit.POLICY_DOC, kit.INSTALL_META, ".gitignore"],
             "promptTemplate": template, "defaultSelection": DEFAULT_SELECTION, "defaultWorkflow": DEFAULT_WORKFLOW}
     script = "// 由 scripts/sync_install_docs.py 生成，请修改安装器或提示词模板。\n"
     script += "window.MAC_INSTALL = " + json.dumps(data, ensure_ascii=False, indent=2).replace("<", "\\u003c") + ";\n"

@@ -61,16 +61,16 @@
 
 **真因**：
 
-1. `git worktree` 每个工作区独立，未跟踪的 `.agents/` 不会自动出现在新 worktree；
+1. `git worktree` 每个工作区独立，未跟踪的 `.multi-agent-collab/` 不会自动出现在新 worktree；
    只扫主工作区的看板看不见它。
-2. 会话没按流程注册 `.agents/sessions/<会话ID>.md`，看板自然没有它的数据。
+2. 会话没按流程注册 `.multi-agent-collab/sessions/<会话ID>.md`，看板自然没有它的数据。
 
 **修复/预防**：
 
-- 看板会枚举全部 linked worktree 并各自扫描 `.agents/`，且对"30 分钟内有改动
+- 看板会枚举全部 linked worktree 并各自扫描 `.multi-agent-collab/`，且对"30 分钟内有改动
   但无会话注册"的 worktree 给出 **`[未注册 worktree 告警]`**。
-- **在附加 worktree 里工作时**，必须在**该 worktree 自己的** `.agents/sessions/`
-  注册会话文件（把整个 `.agents/` 拷过去即可），否则别人只能看到"有未知活动"。
+- **在附加 worktree 里工作时**，必须在**该 worktree 自己的** `.multi-agent-collab/sessions/`
+  注册会话文件（把整个 `.multi-agent-collab/` 拷过去即可），否则别人只能看到"有未知活动"。
 - 开工协调不能只看看板（AGENTS.md 第 3 节的多信号交叉验证就是为这个设计的）。
 
 **仍可能的盲区**：agent 在 worktree 外的目录干活、或只改未跟踪文件。
@@ -86,7 +86,7 @@
 
 **预防（流程层面，比修复重要）**
 
-- 开工**必须**先 `git fetch` + `python tools/agents_status.py` + 看 inbox + 扫开着的 PR
+- 开工**必须**先 `git fetch` + `python .multi-agent-collab/tools/agents_status.py` + 看 inbox + 扫开着的 PR
 - 同一分支/同一批文件已有活跃会话：不抢活，inbox 留言或等失活
 - 长时间占用主工作区时，另一个会话应开 worktree 而不是并发 switch
   （但要遵守 [A1](#a1) 的注册义务）
@@ -193,7 +193,7 @@
 
 **教训**：
 
-- 改完看板**真的跑一次 `python tools/agents_status.py --selfcheck`**
+- 改完看板**真的跑一次 `python .multi-agent-collab/tools/agents_status.py --selfcheck`**
   （内置 46 项断言，专门覆盖这些分支），别只靠读代码。
 - "只在特定数据/特定分支上炸"的问题，自测必须把**坏数据场景**也造出来
   （缺失字段、乱码、未来时间），正常路径全绿说明不了什么。
@@ -298,7 +298,7 @@ git cat-file -t <疑似丢失的SHA>        # 输出 commit = 对象完好
 2. 只读取证：看 `.git/refs`、`.git/objects` 的修改时间是否在当前时刻附近跳动
    （跳动 = 有别的 git 进程在跑，等它静默 ≥2 分钟）
 3. 检查是否有自己不认识的分支名/HEAD 指向（典型事故：另一个会话 `git init` 重建了仓库）
-4. 把发现写进 `.agents/inbox/` 通知其他 agent，向用户汇报，等指示
+4. 把发现写进 `.multi-agent-collab/inbox/` 通知其他 agent，向用户汇报，等指示
 
 **不要**自行 `git init` / 删 `.git` / reset。
 
@@ -307,7 +307,7 @@ git cat-file -t <疑似丢失的SHA>        # 输出 commit = 对象完好
 <a id="b5"></a>
 ## B5 本地协作文件意外出现在 git status / 差点被提交
 
-**现象**：`AGENTS.md`、`.agents/`、`.claude/`、`.trae/` 等本应本机私有的路径
+**现象**：`AGENTS.md`、`.multi-agent-collab/`、`.claude/`、`.trae/` 等本应本机私有的路径
 出现在 `git status`，或 `git add -A` 差点把它们带进提交。
 
 **判断**：`git check-ignore -v <路径>` 看是否被忽略、由哪条规则忽略；
@@ -902,4 +902,26 @@ http_proxy=http://127.0.0.1:<端口> https_proxy=http://127.0.0.1:<端口> \
 - 编号只增不复用；订正旧条目写新条目并引用旧编号（如"订正 B3"）
 - 一条只讲一个问题；命令给可直接复制的版本
 - A/B/C 组只放通用内容；技术栈专属一律进 D 组
-- 本文件是 `.agents/` 的一部分，**本机私有不入库**，换机时重跑安装器即可恢复
+- 本文件是 `.multi-agent-collab/` 的一部分，**本机私有不入库**，换机时重跑安装器即可恢复
+
+
+## 安装兼容性：CRLF 与项目自有 .agents 路径
+
+- 现象：Windows 中只改定制区却被判为区外修改，或项目自有 `.agents/skills/` 被解释成协作记录。
+- 判断：分别对比原始字节、规范化换行后的定制区摘要，以及命令返回的 files 范围。
+- 真因：共享入口需要保留原始换行，但定制区解析曾只接受 LF；通用路径校验曾承担内部布局转换。
+- 修复：仅在解析定制区时规范化换行；入口区外保留字节，内部标记延续原换行；只对明确的套件内部路径转换布局。
+- 验证：定制区升级、CRLF 入口幂等、项目自有路径占用与接管快照回归。
+
+## 本机浏览器预览通道未附加
+
+- 现象：打开本地页面时返回 `Timed out waiting for the Browser webview to attach`。
+- 判断：本地服务进程已启动，但隐藏和可见标签都无法附加；属于浏览器自动化通道问题。
+- 处理：停止重复重试，关闭本次临时 HTTP 服务，保留真实运行测试与静态检查结果，并明确本次未完成视觉验收；通道恢复后再验收页面。
+
+## Windows 短路径导致主工作区被误报
+
+- 现象：Windows CI 中主工作区被列为未登记 worktree，Linux 与本地长路径环境正常。
+- 真因：TEMP/cwd 使用 RUNNER~1 一类 8.3 别名，Git 返回完整路径；仅替换分隔符和转小写不能识别同一个目录。新 .gitignore 改动使原有比较缺陷变成可见告警。
+- 修复：路径身份比较先使用 Path.resolve 解析别名，再保留原有大小写与分隔符规范化；不放宽未登记工作区告警。
+- 验证：相同目录的父路径别名、Windows GetShortPathNameW 别名和真实 linked worktree 回归。

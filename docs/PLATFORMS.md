@@ -6,20 +6,20 @@
 ## 自动读取如何工作
 
 1. 平台启动会话时，发现项目级规则文件。
-2. 平台入口导入或要求读取项目根 `AGENTS.md` 和 `.agents/START_HERE.md`。
+2. 平台入口导入或要求读取项目根 `AGENTS.md` 和 `.multi-agent-collab/START_HERE.md`。
 3. agent 按启动清单重新读取动态的看板、inbox 和近 1–2 天 worklog，并在编码前注册会话。
 
-`AGENTS.md` 管规则，`START_HERE.md` 管阅读顺序，动态记录按需读取。
+`AGENTS.md` 保留项目规则并接入标记，`RULES.md` 管协作规则，`START_HERE.md` 管阅读顺序，动态记录按需读取。
 不用在每个平台保存整套历史，也不用每次读取源码和全部故障手册。
 规则文件是指导机制，不是进程钩子；它不能唤醒已结束的 agent，也不能保证模型执行每条要求。
 
 | 平台 | 本套件的接入方式 | 验证要点 |
 |---|---|---|
 | Codex | 根 `AGENTS.md` | 从正确工作区启动；同目录 `AGENTS.override.md` 可优先于 AGENTS；还受文档大小上限影响 |
-| Claude Code | `CLAUDE.md` 的 `@AGENTS.md`、`@.agents/START_HERE.md` 导入 | 显式导入，兼容旧版本和已有 CLAUDE 文件影响发现的场景；`/git-flow` 是手动命令 |
+| Claude Code | `CLAUDE.md` 的 `@AGENTS.md`、`@.multi-agent-collab/START_HERE.md` 导入 | 显式导入，兼容旧版本和已有 CLAUDE 文件影响发现的场景；`/git-flow` 是手动命令 |
 | OpenCode / Pi | 根 `AGENTS.md` | 确认启动目录与当前客户端的规则发现设置 |
 | Trae | `.trae/rules/git-flow-agent.md`，`alwaysApply: true` | 确认项目规则开启；Trae IDE 与其它同名 CLI 不应混为一种客户端 |
-| WorkBuddy | `.workbuddy-ai/git-flow-agent.md` 兼容镜像 | 需确认当前客户端确实加载此项目入口；修改总章后执行 sync |
+| WorkBuddy | `.workbuddy-ai/git-flow-agent.md` 简短入口 | 需确认当前客户端确实加载此项目入口；修改总章后执行 sync |
 | Cursor | `.cursor/rules/multi-agent-collab.mdc`，`alwaysApply: true` | 使用明确的项目规则入口；本文件指向最新共享规则 |
 | GitHub Copilot | `.github/copilot-instructions.md` | 需在支持此文件的客户端启用项目自定义说明；已有说明保留在托管块外 |
 | Windsurf | `.windsurf/rules/multi-agent-collab.md`，`trigger: always_on` | 使用明确的始终启用入口；当前客户端也可能原生支持 AGENTS |
@@ -44,12 +44,13 @@ python "$HOME/multi-agent-collab/install.py" install . --platforms codex,claude
 # 新增 Cursor，保留先前的选择和项目总章
 python "$HOME/multi-agent-collab/install.py" sync . --platforms cursor
 
-# 刷新已选入口（包括 WorkBuddy 镜像）
+# 刷新已选入口（包括 WorkBuddy 入口）
 python "$HOME/multi-agent-collab/install.py" sync .
 ```
 
-`install` 升级核心模板并保留定制区；`sync` 刷新已选入口，保留整个项目总章及已有启动文档。
-两者都维护 Git 本地忽略、先备份再覆盖，可用 `--dry-run` 预览。
+`install` 核对文件归属后升级核心模板并迁移定制区；`sync` 仅刷新入口标记区和策略说明。
+两者均保留项目原规则，默认在 `.gitignore` 忽略独立目录；新增入口按精确路径写入本机 exclude。
+已存在的项目入口不会额外隐藏，已跟踪入口改动正常显示。可用 `--dry-run` 预览差异。
 `--platforms` 是追加式选择，`none` 只表示不新增平台，不负责卸载既有入口。
 旧版未保存选择时，安装器根据实际入口迁移；linked worktree 首装时继承主工作区选择。
 

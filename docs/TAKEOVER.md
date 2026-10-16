@@ -6,11 +6,11 @@
 ## 先检查，再生成可核对的计划
 
 ```text
-python tools/agents_session.py takeover-inspect <原会话ID> --json
-python tools/agents_session.py takeover-plan <原会话ID> --agent <当前平台> --reason "接管理由" --json
+python .multi-agent-collab/tools/agents_session.py takeover-inspect <原会话ID> --json
+python .multi-agent-collab/tools/agents_session.py takeover-plan <原会话ID> --agent <当前平台> --reason "接管理由" --json
 ```
 
-inspect 只读。plan 在主 worktree 的 `.agents/takeovers/` 保存快照，并在 inbox 发布 agent 接管声明。
+inspect 只读。plan 在主 worktree 的 `.multi-agent-collab/takeovers/` 保存快照，并在 inbox 发布 agent 接管声明。
 计划包含原 ID、所属工作区、分支与提交、文件范围、Git 状态以及改动文件的指纹，不复制文件内容。
 它只申请收回协作占用，没有执行接管。
 
@@ -30,7 +30,7 @@ inspect 只读。plan 在主 worktree 的 `.agents/takeovers/` 保存快照，�
 取得用户对**该计划**的明确确认后，再使用以下命令；已有的明确确认无需重复索取。
 
 ```text
-python tools/agents_session.py takeover-apply <计划ID> --agent <当前平台> --confirm-session <原会话ID> --approval-note "实际用户确认的记录" --json
+python .multi-agent-collab/tools/agents_session.py takeover-apply <计划ID> --agent <当前平台> --confirm-session <原会话ID> --approval-note "实际用户确认的记录" --json
 ```
 
 从声明发布起至少等待 5 分钟，期间继续检查 inbox。任何回复、心跳、工作文件、暂存内容、分支/提交或策略变化，
@@ -47,7 +47,7 @@ python tools/agents_session.py takeover-apply <计划ID> --agent <当前平台> 
 ## 取消或处理中断
 
 ```text
-python tools/agents_session.py takeover-cancel <计划ID> --agent <发起平台> --reason "取消原因" --json
+python .multi-agent-collab/tools/agents_session.py takeover-cancel <计划ID> --agent <发起平台> --reason "取消原因" --json
 ```
 
 取消会保留计划、声明及所有回复，只改自己的计划状态，不释放原会话占用。
