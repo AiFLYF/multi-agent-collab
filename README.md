@@ -310,7 +310,7 @@ multi-agent-collab/
 ├── scripts/sync_install_docs.py # 从安装器与提示词模板同步 README 和页面数据
 ├── scripts/rehearse_workflow.py # 隔离项目中的完整使用流程演练和报告
 ├── site/                       # 介绍页、安装配置器、交互演示（静态文件）
-├── tests/selftest.py            # 43 个测试用例（15 单元 + 28 安装器 E2E）
+├── tests/selftest.py            # 44 个测试用例（15 单元 + 28 安装器 E2E）
 ├── tests/test_sessions.py       # 协作并发、占用、交接和新增平台回归
 ├── tests/test_policy_takeover.py # 策略继承、接管保护和客户端探测回归
 └── .github/workflows/           # 3 系统 × 4 Python 版本 CI + Pages

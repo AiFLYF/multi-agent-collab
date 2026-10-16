@@ -918,3 +918,10 @@ http_proxy=http://127.0.0.1:<端口> https_proxy=http://127.0.0.1:<端口> \
 - 现象：打开本地页面时返回 `Timed out waiting for the Browser webview to attach`。
 - 判断：本地服务进程已启动，但隐藏和可见标签都无法附加；属于浏览器自动化通道问题。
 - 处理：停止重复重试，关闭本次临时 HTTP 服务，保留真实运行测试与静态检查结果，并明确本次未完成视觉验收；通道恢复后再验收页面。
+
+## Windows 短路径导致主工作区被误报
+
+- 现象：Windows CI 中主工作区被列为未登记 worktree，Linux 与本地长路径环境正常。
+- 真因：TEMP/cwd 使用 RUNNER~1 一类 8.3 别名，Git 返回完整路径；仅替换分隔符和转小写不能识别同一个目录。新 .gitignore 改动使原有比较缺陷变成可见告警。
+- 修复：路径身份比较先使用 Path.resolve 解析别名，再保留原有大小写与分隔符规范化；不放宽未登记工作区告警。
+- 验证：相同目录的父路径别名、Windows GetShortPathNameW 别名和真实 linked worktree 回归。

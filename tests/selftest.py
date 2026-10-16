@@ -135,6 +135,18 @@ def install(proj: Path, *extra: str) -> subprocess.CompletedProcess:
 
 
 class TestBoardUnits(unittest.TestCase):
+    def test_workspace_aliases_share_identity(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="mac-path-alias-") as temporary:
+            root = Path(temporary)
+            (root / "child").mkdir()
+            self.assertEqual(board._norm(str(root)), board._norm(str(root / "child") + "/.."))
+            if os.name == "nt":
+                import ctypes
+                buffer = ctypes.create_unicode_buffer(32768)
+                length = ctypes.windll.kernel32.GetShortPathNameW(str(root), buffer, len(buffer))
+                if length and length < len(buffer):
+                    self.assertEqual(board._norm(str(root)), board._norm(buffer.value))
+
     def test_parse_helpers(self) -> None:
         self.assertEqual(board.status_word("active（干活中）"), "active")
         self.assertIsNotNone(board.parse_time("2025-01-15 10:00:00"))

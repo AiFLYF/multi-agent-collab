@@ -235,6 +235,12 @@ def status_word(raw: str) -> str:
 
 
 def _norm(p: str) -> str:
+    # Git reports long paths while cwd/TEMP can use Windows 8.3 aliases.
+    # Resolve filesystem aliases before deciding whether a worktree is ourselves.
+    try:
+        p = str(Path(p).resolve())
+    except (OSError, RuntimeError):
+        pass  # Missing/inaccessible worktrees still get a stable lexical key.
     return p.replace("\\", "/").rstrip("/").lower()
 
 
