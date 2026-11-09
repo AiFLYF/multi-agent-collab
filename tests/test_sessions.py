@@ -195,14 +195,21 @@ class TestSessionCoordination(unittest.TestCase):
         _, handoff = self.command(self.root, "handoff", record["id"], "--agent", "codex", "--summary", "准备结束")
         path = Path(record["file"])
         original = path.read_text(encoding="utf-8")
+        # An expired activity window must not let a rejected finish mutate state.
+        import re
+        original = re.sub(r"(?m)^- (heartbeat|last_activity):.*$",
+                          r"- \1: 2000-01-01 00:00", original)
+        path.write_text(original, encoding="utf-8")
         human = self.root / ".multi-agent-collab/inbox/Q-2026-10-14-handoff-other.md"
         human.write_text("# 人类问题\n- from: human\n- to: any\n- status: open\n", encoding="utf-8")
         before = human.read_bytes()
         path.write_text(original.replace(handoff["inbox"], ".multi-agent-collab/inbox/" + human.name), encoding="utf-8")
+        invalid_before = path.read_bytes()
         rejected, data = self.command(self.root, "finish", record["id"], "--agent", "codex", "--summary", "结束", "--tests", "测试场景")
         self.assertEqual(rejected.returncode, 2, data)
         self.assertIn("关联交接不属于本会话", data["error"])
         self.assertEqual(human.read_bytes(), before)
+        self.assertEqual(path.read_bytes(), invalid_before)
         path.write_text(original, encoding="utf-8")
         handoff_path = self.root / handoff["inbox"]
         handoff_before = handoff_path.read_bytes()

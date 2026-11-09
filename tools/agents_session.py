@@ -929,7 +929,10 @@ def main(argv=None) -> int:
     if hasattr(args, "_notification_root"):
         actor_session = (getattr(args, "actor_session", None) if args.cmd.startswith("takeover-")
                          else getattr(args, "session", None) or result.get("id"))
-        if getattr(args, "agent", None) and actor_session and not args.no_activity:
+        # Rejected transitions promise zero writes, including presence metadata.
+        # A check is observational and may still prove activity when its gate fails.
+        if (getattr(args, "agent", None) and actor_session and not args.no_activity
+                and (rc == 0 or args.cmd == "check")):
             from agents_activity import safe_touch_activity
             activity_warning = safe_touch_activity(args._notification_root, args.agent, actor_session,
                                                    "agents_session." + args.cmd).get("warning")
