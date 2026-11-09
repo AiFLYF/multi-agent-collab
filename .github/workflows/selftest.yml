@@ -6,6 +6,10 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -17,6 +21,16 @@ jobs:
         python-version: ["3.8", "3.10", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Keep the actual 1.7 source for update compatibility tests
+        uses: actions/checkout@v4
+        with:
+          ref: 2e8ba9e29443ff2c80e66ec465f338ac3723b701
+          path: .agents/old-kit-1.7
+          persist-credentials: false
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -34,10 +48,15 @@ jobs:
       - name: Installation docs and platform catalog
         run: python scripts/sync_install_docs.py --check
 
+      - name: Offline startup context budget
+        run: python scripts/measure_context.py --check
+
       - name: Installer end-to-end tests
         run: python tests/selftest.py
 
       - name: Session coordination and platform integration
+        env:
+          MULTI_AGENT_TEST_OLD_KIT: ${{ github.workspace }}/.agents/old-kit-1.7
         run: python -m unittest discover -s tests -p "test_*.py"
 
       - name: Full workflow rehearsal

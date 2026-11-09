@@ -14,8 +14,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 # 同一时刻只跑一个发布；新推送排队，不打断正在进行的发布
 concurrency:
@@ -23,13 +21,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  verify:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    uses: ./.github/workflows/selftest.yml
+    permissions:
+      contents: read
+
   deploy:
+    needs: verify
+    if: ${{ github.ref == 'refs/heads/main' && needs.verify.result == 'success' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
       # 注意：这里不能写 `enablement: true`。
       # GITHUB_TOKEN 没有「创建 Pages 站点」的权限——仓库还没开 Pages 时它会直接
