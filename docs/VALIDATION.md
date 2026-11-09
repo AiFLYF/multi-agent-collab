@@ -4,7 +4,9 @@
 
 功能提交 `d5983e4` 已经由 [PR #8](https://github.com/AiFLYF/multi-agent-collab/pull/8) 合入 `develop`，开发基线为 `d457723`，两者文件树相同。
 功能分支、PR 与开发基线的三系统四 Python 版本 CI 均全部成功。
-`release/1.8.0` 从该开发基线创建，仅更新 README、CHANGELOG、站点版本说明和本验证记录；协作工具、安装器及工作流与已验证版本一致。
+`release/1.8.0` 从该开发基线创建，先更新 README、CHANGELOG、站点版本说明和本验证记录。
+随后发布 push 的 Windows 3.13 与 main PR 的 Ubuntu 3.12 均捕获相同缺陷：被拒绝的 finish 在一分钟节流期满后仍更新活动字段。另一条 develop PR 的 12 项成功不替代这两次失败。
+本地把心跳设为过期时间，已在旧代码上稳定复现无效交接返回 2 但改写原记录的失败。修复仅阻止失败状态变更的附加活动写入，保留带身份的 check 续活；回归继续严格核对错误 1/2、会话/inbox/日志字节与合法收尾。细节见 [A35](TROUBLESHOOTING.md#a35)，最终发布以修复提交的完整检查为准。
 
 默认下载取 main，线上页面由 main 的 Pages 工作流发布，均须通过 release PR 和对应测试门控；GitHub 上仅显示功能分支 recent pushes 不能表示默认版本已更新。
 已安装项目还需执行更新命令，既有 AI 对话需要重读入口或新开对话；仅更新仓库不会自动刷新它们。
