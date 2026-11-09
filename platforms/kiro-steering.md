@@ -4,9 +4,9 @@ inclusion: always
 
 # {{PROJECT_NAME}} · Kiro 协作入口
 
-每次新会话读取根 `AGENTS.md` 与 `.multi-agent-collab/START_HERE.md`。
-Spec 任务写设计、需求或任务清单时也先登记文件范围；实现阶段沿用自己的会话 ID 并更新范围。
-使用 `python .multi-agent-collab/tools/agents_session.py` 完成 check、start、heartbeat、handoff、resume 或 finish。
-本规则适用于可访问本工作区的客户端；云端任务需要在其独立工作区另行安装，不能看到本机记录。
+执行 `.multi-agent-collab/START_HERE.md`，静态规则各读一次，动态状态每次开工和恢复都重查。
+Spec 设计、需求或清单的写入也先登记范围；同任务沿用 ID，阶段间隙检查 inbox。
+执行 START_HERE 的执行中与最终答复前清单；调用带自己的平台/ID，完成默认 finish --standby，未完成 handoff，核验成功再答复。
+云端独立工作区另行安装，不能读取本机记录。
 
-协作总章：`.multi-agent-collab/RULES.md`；项目原有规则与已确认策略继续有效。
+总章：`.multi-agent-collab/RULES.md`；项目原有规则与已确认策略继续有效。

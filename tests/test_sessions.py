@@ -148,8 +148,17 @@ class TestSessionCoordination(unittest.TestCase):
                                             "--files", "src/app.py", "--ack-inbox", question.name)
         self.assertEqual(acknowledged.returncode, 0, record)
         self.assertIn("- status: open", question.read_text(encoding="utf-8"), "确认收到不能伪装成指令完成")
-        self.command(self.root, "finish", record["id"], "--agent", "codex", "--summary", "演练会话结束", "--tests", "仅验证登记流程，没有业务改动")
-        question.write_text(question.read_text(encoding="utf-8").replace("status: open", "status: answered"), encoding="utf-8")
+        before = {p.relative_to(self.root).as_posix(): p.read_bytes()
+                  for p in self.root.rglob("*") if p.is_file() and ".git" not in p.relative_to(self.root).parts}
+        rejected, data = self.command(self.root, "finish", record["id"], "--agent", "codex", "--summary", "仅确认收到", "--tests", "登记流程")
+        self.assertEqual(rejected.returncode, 1, data)
+        after = {p.relative_to(self.root).as_posix(): p.read_bytes()
+                 for p in self.root.rglob("*") if p.is_file() and ".git" not in p.relative_to(self.root).parts}
+        self.assertEqual(after, before)
+        question.write_text(question.read_text(encoding="utf-8").replace("status: open", "status: answered")
+                            + "\n原要求的登记流程已验证并回复。\n", encoding="utf-8")
+        finished, data = self.command(self.root, "finish", record["id"], "--agent", "codex", "--summary", "演练会话结束", "--tests", "仅验证登记流程，没有业务改动")
+        self.assertEqual(finished.returncode, 0, data)
         self.assertEqual(self.start(self.root)[0].returncode, 0)
 
     def test_resume_restores_same_session_and_answers_handoff(self) -> None:
@@ -192,8 +201,26 @@ class TestSessionCoordination(unittest.TestCase):
         path.write_text(original.replace(handoff["inbox"], ".multi-agent-collab/inbox/" + human.name), encoding="utf-8")
         rejected, data = self.command(self.root, "finish", record["id"], "--agent", "codex", "--summary", "结束", "--tests", "测试场景")
         self.assertEqual(rejected.returncode, 2, data)
+        self.assertIn("关联交接不属于本会话", data["error"])
         self.assertEqual(human.read_bytes(), before)
         path.write_text(original, encoding="utf-8")
+        handoff_path = self.root / handoff["inbox"]
+        handoff_before = handoff_path.read_bytes()
+        blocked_before = {p.relative_to(self.root).as_posix(): p.read_bytes()
+                          for p in self.root.rglob("*") if p.is_file() and ".git" not in p.relative_to(self.root).parts}
+        rejected, data = self.command(self.root, "finish", record["id"], "--agent", "codex", "--summary", "仍有原人类问题", "--tests", "测试场景")
+        self.assertEqual(rejected.returncode, 1, data)
+        self.assertIn("仍有未处理的人类指令", data["error"])
+        self.assertEqual(path.read_text(encoding="utf-8"), original)
+        self.assertEqual(handoff_path.read_bytes(), handoff_before)
+        self.assertEqual(human.read_bytes(), before)
+        blocked_after = {p.relative_to(self.root).as_posix(): p.read_bytes()
+                         for p in self.root.rglob("*") if p.is_file() and ".git" not in p.relative_to(self.root).parts}
+        self.assertEqual(blocked_after, blocked_before)
+        # Simulate completing the original human question before legitimate finish.
+        human.write_text(human.read_text(encoding="utf-8").replace("status: open", "status: answered")
+                         + "\n## 回复\n\n原测试问题已处理完成。\n", encoding="utf-8")
+        before = human.read_bytes()
         result, data = self.command(self.root, "finish", record["id"], "--agent", "codex", "--summary", "正常收尾", "--tests", "测试场景")
         self.assertEqual(result.returncode, 0, data)
         self.assertIn("- status: answered", (self.root / handoff["inbox"]).read_text(encoding="utf-8"))

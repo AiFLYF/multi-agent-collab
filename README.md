@@ -9,56 +9,61 @@
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](#安装下载一次按项目复用)
 [![deps](https://img.shields.io/badge/dependencies-none-success)](#仓库结构与验证)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![changelog](https://img.shields.io/badge/changelog-1.7.0-orange)](CHANGELOG.md)
+[![changelog](https://img.shields.io/badge/changelog-1.8.0%20pending-orange)](CHANGELOG.md)
 
-让同一台电脑上、同一项目里的多个 AI 助手遵循一份协作规则：开工先确认谁在做什么，
-改动前避开冲突，收工留下能接手的记录。支持 Codex、Claude Code、OpenCode、Pi、Trae、
-WorkBuddy、Cursor、GitHub Copilot、Windsurf、Gemini CLI、Qwen Code、Cline、Roo Code、Continue 和 Kiro，
-**只安装当前项目需要的平台入口**。
+**本机 AI 编码协作套件。** 让同一项目里的 Codex、Claude Code、Cursor 等助手共享任务、文件占用、指令和交接记录，按项目分支策略开工，留下实际测试结果再收尾。
+
+适合同一电脑上多客户端切换、多个会话接力，或在不同 Git worktree 中处理不重叠文件。
+协作记录保存在本地；检查和登记由 agent 执行，消息在调用套件工具或阶段检查时送达，空闲会话需要人工提醒。
 
 [在线介绍与安装配置](https://aiflyf.github.io/multi-agent-collab/) ·
 [交互演示](https://aiflyf.github.io/multi-agent-collab/demo.html) ·
-[平台接入与验证](docs/PLATFORMS.md) · [更新记录](CHANGELOG.md)
+[操作手册](docs/WORKFLOW.md) · [平台接入](docs/PLATFORMS.md) · [更新记录](CHANGELOG.md)
 
-[完整流程验证与能力边界](docs/VALIDATION.md) 记录实际覆盖的环节、发现的问题和后续优先项。
-
-![协作看板示例：会话状态、指令与回复](docs/assets/board-screenshot.png)
+**版本说明：** 本工作副本面向 1.8.0，尚未发布；默认 GitHub 下载和在线页面可能仍为 1.7.0。
+以下载副本的 `CHANGELOG.md`、命令 `--help` 和安装体检结果为准。
 
 ## 安装：下载一次，按项目复用
 
-需要 **Python 3.8+、Git、一个已有的 Git 项目**。没有第三方 Python 依赖。
-套件源码默认放在用户主目录 `~/multi-agent-collab`（Windows 为 `$HOME\multi-agent-collab`），
-各个项目复用同一个安装器。源码与目标项目是两个目录，不要把套件 clone 到业务项目里。
+需要 **Python 3.8+、Git、一个已有的 Git 项目**，没有第三方 Python 依赖。
+套件源码放在用户主目录，所有目标项目复用这一个安装器；**源码目录与目标项目必须分开，禁止在套件源码目录自安装**。
 
-下面的命令适用于 Bash 和 PowerShell：
+将下面的 `<目标项目绝对路径>` 换成你的项目路径，例如 Windows 的 `D:/code/my-app` 或 Linux 的 `/home/you/code/my-app`。
+命令可用于 PowerShell 和 Bash。首次示例使用 Codex 与 Claude Code；按需替换 `--platforms`。
 
 ```bash
-# 只在第一次下载时运行；已经存在则核对来源后复用
+# 首次下载；目录已存在时核对来源和本地修改后复用
 git clone https://github.com/AiFLYF/multi-agent-collab "$HOME/multi-agent-collab"
 
-# 在你的目标项目目录运行：例如当前使用 Codex 与 Claude Code
-python "$HOME/multi-agent-collab/install.py" install . --platforms codex,claude
-python "$HOME/multi-agent-collab/install.py" doctor .
+# 先预览，核对目标和文件清单，再安装、体检
+python "$HOME/multi-agent-collab/install.py" install "<目标项目绝对路径>" --platforms codex,claude --dry-run
+python "$HOME/multi-agent-collab/install.py" install "<目标项目绝对路径>" --platforms codex,claude
+python "$HOME/multi-agent-collab/install.py" doctor "<目标项目绝对路径>"
 ```
 
-- **自己在终端操作**：首次省略 `--platforms` 会询问，可输入编号或名称并用逗号多选。
-- **交给 AI / 脚本执行**：明确传入 `--platforms`；未选择时会停止，不会默认全装。
-- **原生平台**：只选 `codex`、`opencode` 或 `pi` 时共用 `AGENTS.md`，不生成其它平台目录，连 `CLAUDE.md` 也不安装。
-- **预览文件**：安装命令加 `--dry-run`；只要通用规则可选 `--platforms none`，确实需要全部平台才用 `all`。
-- **升级已有项目**：再次运行 `install .` 会沿用之前的选择，不再询问或偷偷增加平台。
-- **适配项目分支流程**：默认 Git Flow；只有 main 的项目可明确使用 `--workflow github-flow`，也可配置基线和任务前缀。安装器不创建分支。
+首次默认 Git Flow，以 `develop` 为基线。项目以 `main` 为基线时，在两条安装命令中加 `--workflow github-flow`；
+已有策略会沿用，安装器不创建或切换 Git 分支。自定义流程见 [分支策略](docs/WORKFLOW.md#按项目选择分支策略)。
 
-也可以从任意目录指定目标，例如：
+终端交互安装可省略 `--platforms` 后多选；AI 或脚本执行时明确传入。`none` 只装通用规则，`all` 才全选。
+只选 `codex`、`opencode` 或 `pi` 时共用根 `AGENTS.md`，不会生成其它平台目录或 `CLAUDE.md`。
 
-```powershell
-python "$HOME/multi-agent-collab/install.py" install "D:\code\my-app" --platforms codex
+### 装完验证三件事
+
+1. 在目标项目的 `.multi-agent-collab/RULES.md` 第 6 节补齐项目实际测试、构建命令，核对 `POLICY.md` 与项目分支约定。
+2. 检查 `doctor` 输出；在**目标项目根目录**执行下面两条只读命令。返回 1 先处理告警或未读事项，返回 2 先排查错误。
+3. **新开所选客户端的对话**，要求它实际读取 `.multi-agent-collab/START_HERE.md`，报告当前分支、策略、占用与相关 inbox。
+   验收方法见 [平台说明](docs/PLATFORMS.md#如何确认真的生效)；旧对话需主动重读变化部分。
+
+```bash
+git status --short --branch
+python .multi-agent-collab/tools/agents_status.py --context --agent codex
 ```
 
-### 复制提示词给 AI
+<details>
+<summary>把安装交给 AI：展开并复制提示词</summary>
 
-在**目标项目的对话**里粘贴下面这段。AI 先沿用已确认的平台和项目分支约定，缺少信息时才询问对应项。
-[在线配置器](https://aiflyf.github.io/multi-agent-collab/#sec-6) 可以按勾选的平台生成同一份提示词。
-使用 fork 时，将仓库地址换成你的 fork。
+在**目标项目的对话**中粘贴。AI 沿用已确认的平台与分支约定；使用 fork 时替换仓库地址。
+[在线配置器](https://aiflyf.github.io/multi-agent-collab/#sec-6) 可按平台生成提示词，下载版本仍以上面的版本说明为准。
 
 <!-- BEGIN INSTALL_PROMPT -->
 ```text
@@ -74,80 +79,84 @@ python "$HOME/multi-agent-collab/install.py" install "D:\code\my-app" --platform
 5. 新安装把套件规则、工具、记录放入 .multi-agent-collab/，默认在项目 .gitignore 的标记区忽略该目录；平台入口按精确路径写入 .git/info/exclude。已有 AGENTS.md 等共享入口保留原文，只维护小段标记。已跟踪入口的差异正常显示，不取消跟踪，不隐藏索引改动。来源不明的独立目录、损坏标记或被修改的套件文件先报告并保留现场。
 6. 结合项目真实配置填写 .multi-agent-collab/RULES.md 第 6 节缺少的测试/构建命令，项目既有测试要求和已确认策略继续有效。保留已有规则、会话、日志和备份。旧版安装沿用 .agents/ 路径，不自动搬迁；新增平台使用 sync。
 7. 执行 python "<套件目录>/install.py" doctor "<TARGET>"，并核对 git status --short；可用 clients "<TARGET>" --versions 检查 CLI 可用性，不启动模型。汇报套件复用路径、已选平台、项目分支策略、生成文件和体检结果；解释 WARN，版本查询不代表新对话已加载规则。
-8. 告诉我新开对话验证：让 agent 读取 .multi-agent-collab/START_HERE.md，报告当前分支、看板和 inbox 的实际结果。之后增加平台用 sync "<TARGET>" --platforms <新增名称>，无需重复 clone；旧对话需要主动重新读取规则。
+8. 告诉我新开对话验证：让 agent 执行 .multi-agent-collab/START_HERE.md 的开工、执行中与最终答复前清单，报告实际分支、看板和 inbox。普通业务工具带自己的平台和会话 ID 记录活动；完成默认 finish --standby 释放范围等待新任务，未完成 handoff 保留占用，并核验命令成功后答复。之后增加平台用 sync "<TARGET>" --platforms <新增名称>；旧核心先完整 update 再 sync，能力不足不写新版入口，无需重复 clone；旧对话需主动重读变化部分。
 
 执行安装范围内可恢复的修复即可；遇到需要改变现有项目规则或 Git 跟踪状态的冲突，再说明具体情况让我决定。
 ```
 <!-- END INSTALL_PROMPT -->
 
-### 装完验证三件事
+</details>
 
-1. 保留原项目规则，在 `.multi-agent-collab/RULES.md` 第 6 节填写缺少的测试、构建命令。
-   定制区升级会保留。核对 `.multi-agent-collab/POLICY.md` 与项目分支约定一致；安装器不会擅自创建分支。
-2. 跑 `doctor .`，再在目标项目执行 `python .multi-agent-collab/tools/agents_status.py --brief`。检查 Git 忽略和入口是否完整。
-3. **新开对话**，确认 agent 实际读取 `.multi-agent-collab/START_HERE.md`，并报告分支、看板与 inbox 当前结果。
-   旧对话不会自动重新加载。只复述“我会先看板”不算验证通过。
+## 日常协作：开工、进度、交接与完成
 
-## 安装后，项目里有什么
+下面的项目内命令都在**目标项目根目录**运行，`<自己的ID>` 使用 `start` 实际返回的 ID。
+只读咨询不登记写会话；继续同一任务沿用分支和 ID。
 
-```text
-你的项目/                         用户主目录/
-├── AGENTS.md        项目原文 + 标记入口   └── multi-agent-collab/
-├── .multi-agent-collab/                           └── install.py  所有项目复用
-│   ├── RULES.md      协作总章
-│   ├── START_HERE.md 新对话入口
-│   ├── install.json 已选平台、版本、源码路径
-│   ├── POLICY.md    当前分支策略（配置在 policy.json）
-│   ├── sessions/    谁在什么分支做什么
-│   ├── worklog/     最近完成了什么，下一步是什么
-│   ├── inbox/       问题、交接、你的指令
-│   └── …            格式说明、故障手册和模板
-├── .multi-agent-collab/tools/agents_status.py        本地看板
-├── .multi-agent-collab/tools/agents_session.py       登记、占用检查、心跳和收尾
-├── .multi-agent-collab/tools/agents_policy.py        安装器与会话工具共用的策略校验
-└── 所选平台入口                   见下表；没有选的不会创建
-```
-
-总章规定协调、分支、测试与交接；共享记录让会话彼此可见；平台入口引导 agent 在每个新对话
-读取同一份文档。切分支不会丢掉本机记录，换电脑或重新 clone 则需要重新安装并自行迁移记录。
-
-这是一套本机协作协议和工具。它可以和工作区编排工具配合使用；不会替你启动 AI、隔离文件系统、
-锁住源码或同步到其它电脑。多个 agent 仍需遵守检查和登记约定。
-
-## 协作不只靠提示词
-
-新会话按启动清单协调并切到任务分支后，使用会话工具登记：
+| 你要做什么 | 使用哪一步 |
+|---|---|
+| 开始写任务 | 读启动入口、检查动态状态与策略，协调后建任务分支，再 `start` 登记真实文件范围 |
+| 继续自己的 active 任务 | 正常工具调用携带自己的平台/ID，自动记录活动；`heartbeat` 更新进度与范围 |
+| 扩大修改范围 | 先用 `heartbeat --files` 提交完整新列表，成功后再写 |
+| 暂时不能继续 | `handoff` 写下一步、阻塞和未提交位置，保留占用；继续时先 `resume` |
+| 任务完成，继续等待新命令 | 最终答复前核验实际测试、回复原事项，运行 `finish --standby` 保存结果并释放占用 |
+| 待机接到新任务 | 确认新任务分支，用 `activate --task ... --files ...` 重新登记完整范围 |
+| 明确结束对话 | `finish` 置 done，结束的 ID 不能再次用于新任务 |
 
 ```bash
-python .multi-agent-collab/tools/agents_session.py start --agent codex --task "完善登录" --files src/login.py tests/test_login.py --json
-python .multi-agent-collab/tools/agents_session.py heartbeat <返回的会话ID> --agent codex --note "正在验证"
-python .multi-agent-collab/tools/agents_session.py resume <会话ID> --agent codex --note "阻塞解除，继续原任务"
-python .multi-agent-collab/tools/agents_session.py finish <会话ID> --agent codex --summary "完成登录修复" --tests "项目测试通过"
+python .multi-agent-collab/tools/agents_session.py start --agent codex --task "完善登录校验" --files src/login.py tests/test_login.py --json
+python .multi-agent-collab/tools/agents_session.py heartbeat <自己的ID> --agent codex --note "正在验证登录校验"
+python .multi-agent-collab/tools/agents_session.py finish <自己的ID> --agent codex --summary "实际完成内容与交付位置" --tests "实际运行的测试命令和结果" --standby
+
+# 新任务在已确认的任务分支重新登记，不沿用旧任务的文件占用
+python .multi-agent-collab/tools/agents_session.py activate <自己的ID> --agent codex --task "完善注册校验" --files src/register.py tests/test_register.py --json
 ```
 
-- 登记时检查同工作区、同分支和跨 worktree 的文件占用；目录声明能覆盖其子文件。
-- 主 worktree 的系统锁让并发登记串行，避免两个 agent 同时通过检查；进程退出自动释放登记锁。
-- 未确认的人类 inbox 会阻止新写任务；明确回执可用 `--ack-inbox` 纳入当前任务，实际完成前仍保留 open。
-  工具检查会话所有者字段与实际分支，防止误操作。
-- 失活仍保留占用，按接管流程协调；`handoff` 生成交接记录并保留 blocked 状态。
-- `finish` 追加 worklog 并释放占用；看板显示文件范围、阶段进度与占用冲突。
-- blocked 后用 `resume` 恢复自己的 ID；resume / finish 自动回执自己的交接条，避免长期残留未答告警。
-
-扩大范围时先用 heartbeat 的 `--files` 更新完整列表。只读检查用 `check --files ... --json`。
-这些检查协调遵守协议的 agent，不能锁住源码或阻止其它程序绕过登记。
-
-只读咨询不用登记写会话，继续同一任务不用新建 ID。同文件不同函数仍算冲突，需要拆分或串行交接。
-详细场景、失败处理与状态规则见 [协作操作手册](docs/WORKFLOW.md)。
-
-### 自己验证一遍完整流程
+状态、消息和安装等业务工具明确携带 `--agent codex --session <自己的ID>` 后，核验自身记录并自动节流更新最近活动。
+旁观查询和网页自动刷新不会给别人续活；纯审计加 `--no-activity`，安装预览与更新 `--check` 保持零写。
+任意测试或命令可包装执行，保留原输出与退出码，执行期间持续记录活动：
 
 ```bash
-python scripts/rehearse_workflow.py --report .multi-agent-collab/rehearsal-latest.md
+python .multi-agent-collab/tools/agents_session.py run <自己的ID> --agent codex -- python -m unittest discover -s tests
 ```
 
-脚本真实 clone 套件，在隔离项目中跑双项目复用、安装升级、worktree 协作、文件冲突、
-网页指令与回复、中断恢复、收尾、业务测试、向本地 bare 远端推送和卸载预览，输出逐步报告并清理现场。
-它不调用模型、不创建真实 GitHub PR；每个平台的新对话加载仍按平台说明单独验收。
+活动时间表示最近使用工具，任务状态仍由 `activate / handoff / finish` 明确转换。
+收尾前须等本任务全部子代理、测试和包装命令真正结束并收齐结果；仍有运行中或无法核验的命令时，工具拒绝释放文件范围。
+写前还要按项目规则核对远端、open PR、进程、reflog 与文件修改时间。
+同一物理工作区由一个主会话协调写任务；同任务子代理分配不重叠文件，Git 操作集中执行。
+失活和 blocked 都保留占用，同文件不同函数也算冲突。详细步骤见 [操作手册](docs/WORKFLOW.md)。
+
+### 收到消息或人类指令
+
+业务工具会顺带提示相关未读 inbox 和新回复；出现提示再读取：
+
+```bash
+python .multi-agent-collab/tools/agents_messages.py read --agent codex --session <自己的ID>
+```
+
+默认不修改消息与阅读回执，明确身份的调用会记录自己的活动；纯只读审计加 `--no-activity`。
+确认完整阅读后可加 `--mark-read` 保存本会话回执；它不改变事项状态或表示已获授权。
+在原 inbox 追加计划和结果，执行中保留 `open`，完成后置 `answered`。
+暂停、取消、避让立即停止对应写入，不能靠标读或 `--ack-inbox` 解除。
+[消息读取与状态规则](docs/README.md#按需读取消息) · [暂停与恢复](docs/WORKFLOW.md#中断恢复交接与收尾)
+
+## 网页看板
+
+在**目标项目根目录**启动：
+
+```bash
+python .multi-agent-collab/tools/agents_status.py --web
+```
+
+![协作看板示例：会话状态、指令与回复](docs/assets/board-screenshot.png)
+
+上图为浏览器实拍，数据来自隔离示例项目。
+看板每 5 秒刷新，支持会话与收件箱搜索、状态筛选，可查看任务、最近活动、待机、文件占用、inbox 与 worktree 告警，也可向指定会话或 `any` 发指令。
+“本页看过”只记录当前浏览器的查看状态，不代替 agent 的阅读回执或事项完成。
+agent 在阶段间隙读取并回复；空闲会话用「复制提醒」粘贴到对应对话中唤起。
+[交互演示](https://aiflyf.github.io/multi-agent-collab/demo.html) 使用示例数据，真实项目使用本地看板。
+
+`--no-open` 适合自行打开浏览器，`--html` 导出单文件快照，`--brief` 只看一行状态。
+局域网只读分享用 `--web --bind 0.0.0.0 --no-directives`；更多输出与访问配置见 [看板说明](docs/README.md#查看全景)。
 
 ## 平台选择与同步
 
@@ -171,167 +180,121 @@ python scripts/rehearse_workflow.py --report .multi-agent-collab/rehearsal-lates
 | `kiro` | Kiro | `.kiro/steering/multi-agent-collab.md` |
 <!-- END PLATFORM_TABLE -->
 
-Claude 通过 `CLAUDE.md` 导入共享规则；其斜杠命令需要手动调用。
-Cursor / Trae 使用始终应用的项目规则，Windsurf 使用 `always_on` 规则；
-Copilot 需要客户端启用项目自定义说明。WorkBuddy 使用简短协作入口，需在所用版本中验证入口加载。
-详细的规则发现方式与限制见 [平台说明](docs/PLATFORMS.md)。
+加载方式、客户端开关与新对话验收见 [平台说明](docs/PLATFORMS.md)。
+平台入口指向同一份共享规则；选择写入 `install.json`，后续沿用。
+`install` / `sync` 的 `--platforms` 均为追加，不删除已有入口，`none` 也不等于卸载。
+旧版本核心先完整更新，再用新版 `sync` 添加平台。同步不会升级核心；缺少待机、活动或消息工具时会拒绝，避免新提示词调用旧工具不支持的参数。
 
 ```bash
-# 后来开始用 Cursor：追加入口，自动沿用原来的平台
-python "$HOME/multi-agent-collab/install.py" sync . --platforms cursor
+# 后来开始用 Cursor：追加入口，保留已选平台
+python "$HOME/multi-agent-collab/install.py" sync "<目标项目绝对路径>" --platforms cursor
 
-# 改过总章后刷新所有已选入口，含 WorkBuddy 入口
-python "$HOME/multi-agent-collab/install.py" sync .
-
-# 看可选平台和将生成的入口
-python "$HOME/multi-agent-collab/install.py" platforms
+# 只刷新已选入口；核心工具升级见下一节
+python "$HOME/multi-agent-collab/install.py" sync "<目标项目绝对路径>"
 ```
 
-`sync` 保留整个项目总章、已有启动文档和协作记录，只补齐或刷新平台入口及忽略规则。
-`install` 用于升级核心模板，迁移项目定制区。两者的 `--platforms` 都是**追加**，不会删除已装入口；
-`none` 不等于卸载。旧版安装会根据已有文件迁移平台选择，linked worktree 首装会继承主工作区的选择。
-无需重复 clone，也没有后台下载或常驻同步进程。
+## 更新已安装项目
 
-## Git 忽略与已有文件
+| 当前需求 | 使用命令 | 更新范围 |
+|---|---|---|
+| 首次安装 | `install <项目> --platforms <名称>` | 规则、工具、记录模板与所选入口 |
+| 新增平台或刷新入口 | `sync <项目> [--platforms <新增名称>]` | 已选入口与忽略配置，保留总章及运行记录 |
+| 升级核心规则和工具 | `update <项目>` 或项目内 `agents_update.py` | 沿用平台、策略，迁移定制区，保留会话、日志、inbox 和备份 |
 
-新安装默认把规则、工具和本机记录集中放进 **`.multi-agent-collab/`**，并在项目 **`.gitignore`** 追加一个有标记的忽略区。原有忽略规则完整保留。
-新建的平台入口只在 `.git/info/exclude` 中按精确路径忽略，不隐藏整个 `.github/`、`.cursor/`、`tools/` 等项目目录。
-套件源码自身也默认忽略 `.multi-agent-collab/`，但不要把源码仓库安装到自身。
-
-`AGENTS.md` 保留项目原文，只追加类似入口：
-
-```markdown
-<!-- >>> multi-agent-collab:entry >>> -->
-开始任务前读取 .multi-agent-collab/START_HERE.md 与 .multi-agent-collab/RULES.md，
-结合本项目现有规则执行协作流程。
-<!-- <<< multi-agent-collab:entry <<< -->
-```
-
-| 已有文件情况 | 默认处理 |
-|---|---|
-| 项目原有 AGENTS.md、CLAUDE.md、Gemini、Qwen、Copilot 说明 | 原文保留，只维护套件标记区，不额外隐藏原有入口 |
-| 上述共享入口已经被 Git 跟踪 | 保持跟踪，入口改动正常显示；通过项目正常 PR 审查 |
-| 已有未声明归属的平台专用入口或独立目录 | 停止并保留现场，不凭同名认定归属 |
-| 标记损坏、非 UTF-8、路径类型冲突或链接路径 | 停止，不覆盖原文件 |
-| 已安装的套件文件被修改 | 核对内容摘要；定制区内修改迁移，区外修改保留现场并报告 |
-| 卸载 | 移除入口标记区；私有记录、策略、规则和备份保留，忽略继续生效 |
-
-`install --dry-run` / `sync --dry-run` 展示计划与文本差异，不写盘。升级覆盖前按原始字节备份到 `.multi-agent-collab/backups/`。
-项目既有测试要求、架构约定及已确认分支策略继续有效。协作规则不能笼统覆盖原项目规则。
-忽略对已跟踪文件无效，安装器不取消跟踪，也不设置隐藏改动的索引标志。
-
-**旧版兼容：** 已记录在 `.agents/install.json` 的安装保留原路径，工具仍能读取其记录；不自动搬迁未结束会话。
-旧元数据没有内容摘要，升级遇到无法确认的文件差异会停下，请先核对 `--dry-run` 差异，勿直接覆盖。
-源码开发仍使用 `tools/` 下的命令和本机 `.agents/` 记录；以下目标项目命令使用新版默认路径。
-
-## 网页看板
-
-在**目标项目目录**运行：
+先准备本地新版套件源。项目内更新入口从 `install.json` 读取源码位置，**不会下载源码或切换源码分支**。
+在目标项目根目录运行：
 
 ```bash
-python .multi-agent-collab/tools/agents_status.py --web       # 本机网页指挥台
-python .multi-agent-collab/tools/agents_status.py --brief     # agent 的一行开工检查
-python .multi-agent-collab/tools/agents_status.py --html      # 单文件离线快照
+python .multi-agent-collab/tools/agents_update.py --check --json
+python .multi-agent-collab/tools/agents_update.py --dry-run
+python .multi-agent-collab/tools/agents_update.py
 ```
 
-看板每 5 秒刷新，显示会话、心跳、未答问题和 worktree 告警，也可以向 inbox 写指令。
-agent 在任务阶段间隙读取和回复；空闲或已结束的会话需要你粘贴提醒再次唤起。
-[交互演示](https://aiflyf.github.io/multi-agent-collab/demo.html) 使用示例数据，便于先体验操作，不连接真实项目。
+`--check` 返回 0 已最新、1 有可更新内容、2 错误；按实际文件内容比较，同版本也能发现变化。
+预览默认列变更，加 `--diff` 查看详细差异；源码位置改变时加 `--source "<本地套件目录>"`。
+旧安装没有更新入口时，从新版源执行 `python "<套件目录>/install.py" update "<目标项目绝对路径>"`。
+较低版本默认拒绝；区外自定义或文件变化会保留现场并报告。更新后重启长驻看板，让旧对话重读变化规则。
 
-<details>
-<summary>局域网访问与其它输出</summary>
+## 安装目录、已有文件与旧布局
 
-```bash
-python .multi-agent-collab/tools/agents_status.py --json
-python .multi-agent-collab/tools/agents_status.py --web --bind 0.0.0.0 --no-directives
+新安装将协作规则、工具和本机记录集中在 `.multi-agent-collab/`：
+
+```text
+你的项目/
+├── AGENTS.md                         # 项目原文 + 套件入口标记
+├── .multi-agent-collab/
+│   ├── RULES.md / START_HERE.md        # 总章 / 新对话入口
+│   ├── install.json / policy.json     # 安装选择、源码位置 / 分支策略
+│   ├── POLICY.md / WORKFLOW.md         # 策略说明 / 操作手册
+│   ├── sessions/ / worklog/ / inbox/   # 任务、日志、问题与指令
+│   ├── tools/                         # 看板、会话、消息与更新命令
+│   └── backups/                       # 升级前的原始字节备份
+└── 所选平台入口                        # 见平台表
 ```
 
-默认只监听 `127.0.0.1`。局域网需要可写时，先设置 `MULTI_AGENT_BOARD_PASSWORD`；
-不设置密码的对外可写服务会拒绝启动。HTTP 只适合可信网络，远程访问建议 SSH 端口转发。
-可用 `MULTI_AGENT_BOARD_READONLY=1` 强制只读。
+项目 `.gitignore` 只追加套件标记区；新建平台入口按精确路径写入本机 `.git/info/exclude`。
+项目原有 `AGENTS.md`、`CLAUDE.md` 等说明保留原文，只维护入口标记。
+**已跟踪文件保持跟踪，真实差异正常显示**；专用入口归属不明、标记损坏或用户修改会先报告，保留现场。
+记录不随 Git clone 同步，重要节点自行备份到仓库外。
 
-</details>
+| 目录类型 | 规则与本机记录 | 运行工具 |
+|---|---|---|
+| 新版目标项目 | `.multi-agent-collab/` | `.multi-agent-collab/tools/` |
+| 已记录的旧版安装 | 保留 `.agents/` | 保留项目根 `tools/` |
+| 套件源码开发 | 产品模板在 `docs/`，本机记录在 `.agents/` | 源码 `tools/`，禁止自安装 |
 
-## 命令速查
+旧版不会自动搬迁未结束记录。以实际 `install.json` 和根入口中的路径为准，先核对 `--dry-run` 差异再更新；
+不要为了套用新路径移动旧目录。共享库供业务工具调用，`agents_processes.py` 由 run 内部启动；统一使用上述业务入口。
 
-下表的 `install.py` 位于复用的套件源码目录，`<项目>` 是目标工作区。
+## 命令速查与故障处理
+
+安装器命令使用 `python "<套件目录>/install.py" <命令> "<目标项目绝对路径>"`；
+先用相应 `--help` 查看下载版本支持的参数。
 
 | 命令 | 用途 |
 |---|---|
-| `python install.py platforms [--json]` | 支持的平台和文件清单 |
-| `python install.py install <项目> --platforms codex` | 首次按需安装；以后省略参数沿用 |
-| `python install.py install <项目> --dry-run` | 安装预览，不写盘 |
-| `python install.py sync <项目> [--platforms cursor]` | 刷新已选入口，或追加平台 |
-| `python install.py doctor <项目>` | 核心文件、已选入口、版本、忽略及看板冒烟检查 |
-| `python install.py clients <项目> [--versions] [--json]` | CLI 发现与版本检查；新对话加载仍需实际验证 |
-| `python install.py install <项目> --workflow github-flow` | 明确使用 main 为 PR 基线；不建立或切换 Git 分支 |
-| `python install.py mirror <项目>` | 旧命令兼容：追加 WorkBuddy 并同步已选入口 |
-| `python install.py uninstall <项目>` | 移除忽略托管块，文件保留，此后会出现在 Git 状态中 |
-| `python install.py uninstall <项目> --purge-files` | 再清理未修改的套件文件；定制、会话、日志、留言、策略、接管记录及备份保留 |
+| `platforms [--json]` | 平台与入口清单，无需目标路径 |
+| `doctor <项目>` | 文件、入口、版本、忽略与看板体检 |
+| `clients <项目> --versions [--json]` | 查询 CLI 可用性和版本，新对话加载需单独验证 |
+| `uninstall <项目> --dry-run` | 预览卸载文件和入口变化 |
+| `uninstall <项目>` | 移除已确认归属的入口块，保留私有记录和忽略 |
+| `uninstall <项目> --purge-files` | 同时清理未修改工具，保留定制、记录、策略与备份 |
 
-任何命令先用 `--help` 查看当前参数。手工复制容易漏掉平台选择记录和 Git worktree 的忽略位置，建议使用安装器。
-
-### 项目策略与失联接管
-
-`git-flow` 默认使用 develop；`github-flow` 默认使用 main；`custom` 明确基线和任务前缀。
-升级和同步会沿用保存的策略，同一仓库各 worktree 以主工作区策略为准。
-main、master、develop 和所选基线始终受保护。详见 [协作手册](docs/WORKFLOW.md#按项目选择分支策略)。
-
-```text
-python <套件目录>/install.py install <项目> --workflow custom --base-branch trunk --task-prefixes task/,fix/
-python .multi-agent-collab/tools/agents_session.py takeover-inspect <原会话ID> --json
-```
-
-原会话失联时，先只读检查，再生成接管计划。声明至少等待 5 分钟、用户确认具体计划且快照一致后，
-才收回协作占用；保留原会话、提交与未提交文件。完整命令见 [失联接管](docs/TAKEOVER.md)。
-
-## 出问题时
-
-先看目标项目的 `.multi-agent-collab/TROUBLESHOOTING.md`，再运行 `doctor`。
-手册按协作、Git 引用、网络/终端分类；D 组用于追加自己的项目问题，升级保留。
-
-- [会话填法](docs/examples/session-example.md)
-- [同文件协作与交接示例](docs/examples/inbox-example.md)
-- [项目故障记录示例](docs/examples/project-specific-troubleshooting.md)
-- [平台没有加载规则时的检查顺序](docs/PLATFORMS.md#如何确认真的生效)
+遇到问题先按 [故障手册](docs/TROUBLESHOOTING.md) 索引定位，再运行体检；实际项目在 `.multi-agent-collab/TROUBLESHOOTING.md` 追加自己的故障记录。
+失联任务先 [接管检查与计划](docs/TAKEOVER.md)，等待至少 5 分钟、用户确认具体计划且快照一致后才执行；保留原提交和未提交文件。
+[会话示例](docs/examples/session-example.md) · [交接示例](docs/examples/inbox-example.md) · [项目故障示例](docs/examples/project-specific-troubleshooting.md)
 
 ## 仓库结构与验证
 
+以下命令仅在**套件源码目录**运行：
+
 ```text
 multi-agent-collab/
-├── install.py                  # 安装 / 同步 / 体检 / 平台列表 / 卸载
-├── docs/RULES.md  CLAUDE.md    # 发布到项目的规则与入口模板
-├── tools/agents_status.py      # 零依赖协作看板
-├── tools/agents_session.py     # 占用检查、原子登记、心跳、收尾与交接
-├── tools/agents_policy.py      # 项目分支策略与校验
-├── templates/                  # 会话 / 留言 / 日志 / 安装提示词
-├── platforms/                  # 按需安装的平台入口模板
-├── docs/                       # 启动流程、平台说明、共享格式与故障手册
-├── scripts/sync_install_docs.py # 从安装器与提示词模板同步 README 和页面数据
-├── scripts/rehearse_workflow.py # 隔离项目中的完整使用流程演练和报告
-├── site/                       # 介绍页、安装配置器、交互演示（静态文件）
-├── tests/selftest.py            # 44 个测试用例（15 单元 + 28 安装器 E2E）
-├── tests/test_sessions.py       # 协作并发、占用、交接和新增平台回归
-├── tests/test_policy_takeover.py # 策略继承、接管保护和客户端探测回归
-└── .github/workflows/           # 3 系统 × 4 Python 版本 CI + Pages
+├── install.py                  # 安装、更新、同步、体检与卸载
+├── docs/                       # 发布规则、操作手册与验证报告
+├── platforms/ / templates/     # 平台入口与记录模板
+├── tools/                      # 看板、会话、消息、更新及共享库
+├── scripts/                    # 流程演练、文档同步与上下文测量
+├── site/                       # 静态介绍页、配置器与示例演示
+├── tests/selftest.py            # 44 个测试用例（16 单元 + 28 安装器 E2E）
+└── .github/workflows/           # 多系统、多 Python 版本 CI 与 Pages
 ```
 
 ```bash
 python tools/agents_status.py --selfcheck
 python tests/selftest.py
 python -m unittest discover -s tests -p "test_*.py"
-python scripts/rehearse_workflow.py --report .multi-agent-collab/rehearsal-latest.md
+python scripts/rehearse_workflow.py --report .agents/rehearsal-latest.md
 python scripts/sync_install_docs.py --check
 ```
 
-测试在系统临时目录创建真实 Git 仓库，覆盖按平台安装、选择迁移、同步与幂等、忽略失败、
-已跟踪文件保护、定制/备份、linked worktree、卸载和看板语义。
-本地预览网站可在仓库执行 `python -m http.server 8080 --bind 127.0.0.1 --directory site`。
+演练在隔离项目中实际执行安装、协作、HTTP 指令与回复、中断恢复、业务测试和本地 bare 远端推送，不调用模型或创建真实 GitHub PR。
+覆盖与局限见 [验证记录](docs/VALIDATION.md)、[实际使用改进](docs/REAL_WORLD_REVIEW.md)。
+上下文预算与可选 token 测量见 [TOKEN_BUDGET.md](docs/TOKEN_BUDGET.md)，字符减少量与真实任务用量分别记录。
+网站本地预览：`python -m http.server 8080 --bind 127.0.0.1 --directory site`。
 
-贡献时，根 `AGENTS.md` / `CLAUDE.md` / `platforms/` / 看板脚本是**已跟踪的产品源码**，
-目标项目的本机私有约定不表示要从套件仓库删除这些模板。
-运行记录 `.multi-agent-collab/` 仍留在本机，禁止在套件目录自安装。
-改平台目录或安装提示词后运行 `python scripts/sync_install_docs.py`，并同步版本和 CHANGELOG。
+源码的根 `AGENTS.md`、`CLAUDE.md`、`docs/`、`platforms/` 与工具是已跟踪产品源码，正常审查；本机运行记录不入库。
+改平台目录或安装提示词后运行 `python scripts/sync_install_docs.py`，再检查版本与 `CHANGELOG.md`。
 
 ## 起源与许可
 

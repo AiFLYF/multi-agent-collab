@@ -6,6 +6,7 @@
 
 用法：
     python install.py install [TARGET]            # 安装/升级到 TARGET（默认当前目录）
+    python install.py update [TARGET]             # 完整更新已安装项目；--check 检查，--dry-run 预览
     python install.py doctor [TARGET]             # 体检：文件齐不齐、忽略生不生效、看板能不能跑
     python install.py sync [TARGET]               # 同步已选平台；--platforms 可追加新平台
     python install.py platforms                   # 查看支持的平台与入口
@@ -28,23 +29,30 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import difflib
 import hashlib
+import io
 import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
+import time
+from contextlib import contextmanager, redirect_stdout
+from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
 
 KIT_ROOT = Path(__file__).resolve().parent
-KIT_VERSION = "1.7.0"   # 升级 kit 时记得改；会写进目标项目的 .agents/install.json
+KIT_VERSION = "1.8.0"   # 升级 kit 时记得改；会写进目标项目的 .agents/install.json
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(KIT_ROOT / "tools"))
 from agents_policy import POLICY_FILE, POLICY_DOC, build_policy, effective_policy, render_policy  # noqa: E402
+from agents_layout import prefer_native_git  # noqa: E402
 
 # 与 tools/agents_status.py 同名同义：git 可执行文件解析的环境变量覆盖
 # （两份小拷贝是有意为之——看板会被单独装进目标项目，不能 import 安装器）。
@@ -52,6 +60,31 @@ GIT_ENV_VAR = "MULTI_AGENT_GIT"
 _GIT_FORCE_OFF = {"none", "0", "off", "no", "false"}
 _GIT_UNSET = object()
 _git_bin_cache: object = _GIT_UNSET
+_git_topology_cache = ContextVar("multi_agent_install_git_topology", default=None)
+
+
+def cached_topology(target: Path, field: str, read):
+    cache = _git_topology_cache.get()
+    if cache is None:
+        return read()
+    key = (target.resolve(), field)
+    if key not in cache:
+        cache[key] = read()
+    return cache[key]
+
+
+@contextmanager
+def git_topology_scope(target: Path, common: Path | None):
+    """Cache stable topology for this command; writes still require the lock."""
+    cache = None if common is None else {
+        (target.resolve(), "inside_worktree"): True,
+        (target.resolve(), "common_dir"): common,
+    }
+    token = _git_topology_cache.set(cache)
+    try:
+        yield
+    finally:
+        _git_topology_cache.reset(token)
 
 
 def _candidate_git_paths() -> list[str]:
@@ -88,6 +121,7 @@ def resolve_git() -> str | None:
             if os.path.isfile(cand):
                 found = cand
                 break
+    found = prefer_native_git(found)
     _git_bin_cache = found
     return found
 
@@ -100,8 +134,16 @@ CORE_FILES = [
     ("tools/agents_session.py", "tools/agents_session.py", None),
     ("tools/agents_policy.py", "tools/agents_policy.py", None),
     ("tools/agents_layout.py", "tools/agents_layout.py", None),
+    ("tools/agents_update.py", "tools/agents_update.py", None),
+    ("tools/agents_notifications.py", "tools/agents_notifications.py", None),
+    ("tools/agents_messages.py", "tools/agents_messages.py", None),
+    ("tools/agents_activity.py", "tools/agents_activity.py", None),
+    ("tools/agents_run.py", "tools/agents_run.py", None),
+    ("tools/agents_jobs.py", "tools/agents_jobs.py", None),
+    ("tools/agents_processes.py", "tools/agents_processes.py", None),
     ("docs/README.md", ".agents/README.md", None),
     ("docs/START_HERE.md", ".agents/START_HERE.md", None),
+    ("docs/TOKEN_BUDGET.md", ".agents/TOKEN_BUDGET.md", None),
     ("docs/WORKFLOW.md", ".agents/WORKFLOW.md", None),
     ("docs/TAKEOVER.md", ".agents/TAKEOVER.md", None),
     ("docs/TROUBLESHOOTING.md", ".agents/TROUBLESHOOTING.md", "__troubles__"),
@@ -219,16 +261,25 @@ def configure_layout(target: Path | None = None) -> None:
     STATE_DIR = ".multi-agent-collab"
     # Existing recorded installs retain their layout. Never adopt an unrelated .agents/.
     if target is not None and not (target / STATE_DIR).exists():
-        raw = read_text(target / ".agents/install.json")
+        legacy_path = target / ".agents/install.json"
+        raw = read_text(legacy_path)
+        if legacy_path.exists() and (raw is None or not raw.strip()):
+            raise ValueError(f"{legacy_path} 为空或不可读取；无法确认旧版布局，未更新安装")
         if not raw:
             primary = primary_worktree(target)
             if primary is not None and primary != target and not (primary / STATE_DIR).exists():
-                raw = read_text(primary / ".agents/install.json")
+                legacy_path = primary / ".agents/install.json"
+                raw = read_text(legacy_path)
+                if legacy_path.exists() and (raw is None or not raw.strip()):
+                    raise ValueError(f"{legacy_path} 为空或不可读取；无法确认主工作区旧版布局")
         try:
             legacy = json.loads(raw or "{}")
-        except ValueError:
-            legacy = {}
-        if isinstance(legacy, dict) and legacy.get("kit_version") and legacy.get("source_dir"):
+        except ValueError as exc:
+            raise ValueError(f"{legacy_path} 的 JSON 损坏；无法确认旧版布局，未更新安装") from exc
+        recorded = isinstance(legacy, dict) and legacy.get("owner", "multi-agent-collab") == "multi-agent-collab"
+        if recorded and legacy.get("kit_version") and legacy.get("source_dir"):
+            if not isinstance(legacy["kit_version"], str) or not isinstance(legacy["source_dir"], str):
+                raise ValueError(f"{legacy_path} 的旧版归属字段损坏；未更新安装")
             STATE_DIR = ".agents"
     CORE_FILES = [(src, layout_path(dst), zone) for src, dst, zone in LEGACY_CORE_FILES]
     INSTALL_META = STATE_DIR + "/install.json"
@@ -237,7 +288,7 @@ def configure_layout(target: Path | None = None) -> None:
     EXCLUDE_ENTRIES = ["/" + STATE_DIR + "/", "/AGENTS.md", "/CLAUDE.md"]
     EXCLUDE_ENTRIES += ["/" + dst for _src, dst, _zone in platform_files(ALL_PLATFORMS)]
     if STATE_DIR == ".agents":
-        EXCLUDE_ENTRIES += ["/tools/agents_" + name + ".py" for name in ("status", "session", "policy", "layout")]
+        EXCLUDE_ENTRIES += ["/" + dst for src, dst, _zone in CORE_FILES if src.startswith("tools/agents_")]
     EXCLUDE_ENTRIES = list(dict.fromkeys(EXCLUDE_ENTRIES))
 
 
@@ -261,11 +312,73 @@ ZONE_RE = re.compile(
 # --------------------------------------------------------------------------- #
 
 def read_text(path: Path) -> str | None:
-    """读 UTF-8 文本；文件不存在或不是合法 UTF-8（如老 GBK 文件）都返回 None，绝不抛异常。"""
+    """读 UTF-8 原字节；事务内重复读取已变化的输入时停止，避免写回旧计划。"""
     try:
-        return path.read_bytes().decode("utf-8")
-    except (OSError, UnicodeDecodeError):
+        data = path.read_bytes()
+    except FileNotFoundError:
+        data = None
+    except OSError:
         return None
+    transaction = _install_transaction.get()
+    if transaction is not None:
+        transaction.observe(path, data)
+    if data is None:
+        return None
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
+_install_transaction = ContextVar("multi_agent_install_transaction", default=None)
+_PREIMAGE_UNSET = object()
+
+
+def current_bytes(path: Path) -> bytes | None:
+    if path.is_symlink() or getattr(path, "is_junction", lambda: False)():
+        raise ValueError(f"{path} 已成为链接，停止旧计划并保留现场")
+    try:
+        return path.read_bytes()
+    except FileNotFoundError:
+        return None
+
+
+def write_bytes_atomic(path: Path, content: bytes, mode: int | None = None, guard=None) -> None:
+    """Atomically replace a file while preserving its existing permissions."""
+    transaction = _install_transaction.get()
+    if guard is not None:
+        guard()
+    if transaction is not None:
+        transaction.prepare(path, guard)
+    previous_mode = mode if mode is not None else (stat.S_IMODE(path.stat().st_mode) if path.exists() else None)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if guard is not None:
+        guard()
+    if transaction is not None:
+        transaction.verify(path)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if previous_mode is not None:
+            os.chmod(tmp_name, previous_mode)
+        if guard is not None:
+            guard()
+        if transaction is not None:
+            transaction.verify(path)
+        os.replace(tmp_name, path)
+        if transaction is not None:
+            transaction.written[path] = content
+    except BaseException:
+        try:
+            if guard is not None:
+                guard()
+            os.unlink(tmp_name)
+        except (OSError, ValueError):
+            pass
+        raise
 
 
 def write_lf(path: Path, content: str) -> None:
@@ -275,23 +388,136 @@ def write_lf(path: Path, content: str) -> None:
     直接 open("w") 会先截断目标，崩溃后只剩半个文件。临时文件与目标同目录，
     os.replace 在同卷上是原子替换。
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp",
-                                    dir=str(path.parent))
+    write_bytes_atomic(path, content.encode("utf-8"))
+
+
+class InstallTransaction:
+    """Undo this process's writes on failure without overwriting subsequent edits."""
+
+    def __init__(self):
+        self.originals = {}
+        self.written = {}
+        self.preimages = {}
+        self.guards = {}
+        self.created_directories = set()
+
+    def observe(self, path: Path, content: bytes | None) -> None:
+        expected = self.written.get(path, self.preimages.get(path, _PREIMAGE_UNSET))
+        if expected is not _PREIMAGE_UNSET and content != expected:
+            raise ValueError(f"{path} 在读取或规划后发生外部改动，停止旧计划并保留现有字节")
+        self.preimages.setdefault(path, content)
+
+    def expect(self, preimages: dict) -> None:
+        for path, content in preimages.items():
+            self.observe(path, content)
+
+    def verify(self, path: Path) -> None:
+        guard = self.guards.get(path)
+        if guard is not None:
+            guard()
+        original = self.originals.get(path)
+        fallback = original[0] if original is not None else None if path in self.originals else _PREIMAGE_UNSET
+        expected = self.written.get(path, self.preimages.get(path, fallback))
+        if expected is not _PREIMAGE_UNSET and current_bytes(path) != expected:
+            raise ValueError(f"{path} 在读取或规划后发生外部改动，停止旧计划并保留现有字节")
+
+    def verify_inputs(self) -> None:
+        for path in self.preimages:
+            self.verify(path)
+
+    def prepare(self, path: Path, guard=None) -> None:
+        if guard is not None:
+            self.guards[path] = guard
+        self.verify(path)
+        if path not in self.originals:
+            content = current_bytes(path)
+            self.originals[path] = (content, stat.S_IMODE(path.stat().st_mode)) if content is not None else None
+        parent = path.parent
+        while not parent.exists():
+            self.created_directories.add(parent)
+            parent = parent.parent
+
+    def rollback(self) -> list[str]:
+        failures = []
+        for path, expected in reversed(list(self.written.items())):
+            try:
+                guard = self.guards.get(path)
+                if guard is not None:
+                    guard()
+                unchanged = (not path.exists() and not path.is_symlink()) if expected is None else (
+                    not path.is_symlink() and path.is_file() and path.read_bytes() == expected)
+                if not unchanged:
+                    failures.append(f"{path} 在写入后发生外部改动，保留现场")
+                    continue
+                original = self.originals[path]
+                if original is None:
+                    if expected is not None:
+                        path.unlink()
+                else:
+                    write_bytes_atomic(path, original[0], original[1], guard)
+            except (OSError, ValueError) as exc:
+                failures.append(f"{path} 无法回滚：{exc}")
+        for directory in sorted(self.created_directories, key=lambda item: len(item.parts), reverse=True):
+            try:
+                if (directory.is_symlink() or getattr(directory, "is_junction", lambda: False)() or
+                        directory.resolve() != directory.absolute()):
+                    continue
+                directory.rmdir()  # Only directories created by this transaction, and only when empty.
+            except OSError:
+                pass
+        return failures
+
+
+def delete_managed_file(path: Path) -> None:
+    transaction = _install_transaction.get()
+    if transaction is not None:
+        transaction.prepare(path)
+        transaction.verify(path)
+    path.unlink()
+    if transaction is not None:
+        transaction.written[path] = None
+
+
+@contextmanager
+def installation_transaction():
+    transaction = InstallTransaction()
+    token = _install_transaction.set(transaction)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
-            f.write(content)
-        os.replace(tmp_name, path)
-    except BaseException:
-        try:
-            os.unlink(tmp_name)
-        except OSError:
-            pass
+        yield transaction
+    except BaseException as exc:
+        _install_transaction.reset(token)
+        failures = transaction.rollback()
+        if failures:
+            raise ValueError(f"安装更新失败：{exc}；回滚未完全完成：" + "; ".join(failures)) from exc
+        if transaction.written:
+            print("  ℹ 本次文件及忽略规则已回滚到操作前状态，未保留部分安装", file=sys.stderr)
         raise
+    else:
+        _install_transaction.reset(token)
 
 
 def stamp() -> str:
     return datetime.now().strftime("%Y%m%d-%H%M%S")
+
+
+def validate_backup_path(path: Path, target: Path, directory: bool = False) -> None:
+    """Reject redirected backup paths before creating or replacing any file."""
+    root = target.resolve()
+    try:
+        resolved = path.resolve()
+        resolved.relative_to(root)
+    except ValueError:
+        raise ValueError(f"备份路径 {path} 指向项目外部，拒绝写入并保留现场") from None
+    # resolve also exposes junctions on Python versions without Path.is_junction.
+    if resolved != path.absolute():
+        raise ValueError(f"备份路径 {path} 经链接重定向，拒绝写入并保留现场")
+    for parent in (path, *path.parents):
+        if parent == root:
+            break
+        if parent.is_symlink() or getattr(parent, "is_junction", lambda: False)():
+            raise ValueError(f"备份路径 {path} 包含链接，拒绝写入并保留现场")
+        if parent.exists() and not parent.is_dir() and (parent != path or directory or not parent.is_file()):
+            raise ValueError(f"备份路径 {path} 不是普通目录或文件，拒绝写入并保留现场")
 
 
 def backup_dest(dest: Path, target: Path) -> Path:
@@ -299,12 +525,14 @@ def backup_dest(dest: Path, target: Path) -> Path:
     rel = dest.relative_to(target)
     flat = str(rel).replace("\\", "/").replace("/", "__")
     bdir = target / STATE_DIR / "backups"
+    validate_backup_path(bdir, target, directory=True)
     ts = stamp()
     cand = bdir / f"{flat}.{ts}.bak"
     i = 2
     while cand.exists():       # 同一秒内多次覆盖：加序号，绝不冲掉上一份
         cand = bdir / f"{flat}.{ts}-{i}.bak"
         i += 1
+    validate_backup_path(cand, target)
     return cand
 
 
@@ -325,8 +553,10 @@ def install_file(dest: Path, content: str, target: Path,
         bk = backup_dest(dest, target)
         print(f"  ~ 覆盖（旧版备份 {bk.relative_to(target)}）  {dest}")
         if not dry_run:
-            bk.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(dest, bk)   # 字节级备份，非 UTF-8 旧文件也不会在这一步炸
+            guard = lambda: validate_backup_path(bk, target)
+            write_bytes_atomic(bk, dest.read_bytes(), stat.S_IMODE(dest.stat().st_mode), guard)
+            guard()
+            shutil.copystat(dest, bk)
     else:
         print(f"  + 新建  {dest}")
     if not dry_run:
@@ -416,19 +646,44 @@ def git_ok(target: Path, *args: str) -> tuple[bool, str]:
 
 
 def is_git_repo(target: Path) -> bool:
-    ok, _ = git_ok(target, "rev-parse", "--is-inside-work-tree")
-    return ok
+    def read():
+        ok, output = git_ok(target, "rev-parse", "--is-inside-work-tree")
+        return ok and output.strip() == "true"
+    return cached_topology(target, "inside_worktree", read)
+
+
+def worktree_listing(target: Path):
+    def read():
+        ok, out = git_ok(target, "worktree", "list", "--porcelain", "-z")
+        if not ok:
+            ok, out = git_ok(target, "worktree", "list", "--porcelain")
+        return ok, out
+    return cached_topology(target, "worktree_listing", read)
 
 
 def primary_worktree(target: Path) -> Path | None:
     """主工作区路径（git worktree list 的第一条）；不是 git 仓库时返回 None。"""
-    ok, out = git_ok(target, "worktree", "list", "--porcelain")
-    if not ok:
+    def read():
+        ok, out = worktree_listing(target)
+        if not ok:
+            return None
+        for line in (out.split("\0") if "\0" in out else out.splitlines()):
+            if line.startswith("worktree "):
+                return Path(line[9:] if "\0" in out else line[9:].strip()).resolve()
         return None
-    for line in out.splitlines():
-        if line.startswith("worktree "):
-            return Path(line[9:].strip()).resolve()
-    return None
+    return cached_topology(target, "primary_worktree", read)
+
+
+def common_git_dir(target: Path) -> Path | None:
+    def read():
+        ok, common = git_ok(target, "rev-parse", "--path-format=absolute", "--git-common-dir")
+        if not ok or not common.strip():
+            ok, common = git_ok(target, "rev-parse", "--git-common-dir")
+        if not ok or not common.strip():
+            return None
+        path = Path(common.strip())
+        return path if path.is_absolute() else (target / path).resolve()
+    return cached_topology(target, "common_dir", read)
 
 
 def in_linked_worktree(target: Path) -> bool:
@@ -437,6 +692,10 @@ def in_linked_worktree(target: Path) -> bool:
 
 
 def exclude_paths(target: Path) -> list[Path]:
+    return list(cached_topology(target, "exclude_paths", lambda: _read_exclude_paths(target)))
+
+
+def _read_exclude_paths(target: Path) -> list[Path]:
     """返回需要维护 ignore 的 exclude 路径。
 
     - 普通仓库：<.git>/info/exclude
@@ -456,14 +715,8 @@ def exclude_paths(target: Path) -> list[Path]:
         first = (target / first).resolve()
     locs.append(first)
 
-    ok2, common = git_ok(target, "rev-parse", "--path-format=absolute",
-                         "--git-common-dir")
-    if not ok2 or not common.strip():
-        ok2, common = git_ok(target, "rev-parse", "--git-common-dir")
-    if ok2 and common.strip():
-        cp = Path(common.strip())
-        if not cp.is_absolute():
-            cp = (target / cp).resolve()
+    cp = common_git_dir(target)
+    if cp is not None:
         cp_ex = cp / "info" / "exclude"
         if cp_ex not in locs:
             locs.append(cp_ex)
@@ -493,6 +746,20 @@ def managed_block(entries=None) -> str:
     return MARK_BEGIN + "\n" + "\n".join(EXCLUDE_ENTRIES if entries is None else entries) + "\n" + MARK_END + "\n"
 
 
+def exclude_content(current: str, entries=None) -> str:
+    cleaned = strip_managed(current)
+    if cleaned and not cleaned.endswith("\n"):
+        cleaned += "\n"
+    selected = entries
+    if entries is not None:
+        span = re.search(re.escape(MARK_BEGIN) + r"\r?\n(.*?)" + re.escape(MARK_END), current, re.S)
+        known = set(EXCLUDE_ENTRIES) | {"/.agents/", "/.multi-agent-collab/"}
+        known.update("/" + src for src, _dst, _zone in LEGACY_CORE_FILES if src.startswith("tools/agents_"))
+        previous = [line.strip() for line in span[1].splitlines() if line.strip() in known] if span else []
+        selected = list(dict.fromkeys(previous + list(entries)))
+    return cleaned + managed_block(selected)
+
+
 def update_excludes(target: Path, dry_run: bool, entries=None) -> str:
     """幂等更新全部 exclude 位置。返回 'updated' / 'ok' / 'nogit'。"""
     locs = exclude_paths(target)
@@ -514,10 +781,7 @@ def update_excludes(target: Path, dry_run: bool, entries=None) -> str:
                       "托管块也没写进去；请先把它转成 UTF-8 后重跑安装器，"
                       "或手工把 EXCLUDE_ENTRIES 加进去")
                 return "error"
-        cleaned = strip_managed(current)
-        if cleaned and not cleaned.endswith("\n"):
-            cleaned += "\n"
-        new_text = cleaned + managed_block(entries)
+        new_text = exclude_content(current, entries)
         if new_text == current:
             continue
         try:
@@ -550,18 +814,57 @@ def load_project_name(target: Path, cli_name: str | None) -> str:
 
 
 def read_meta(target: Path) -> dict:
-    raw = read_text(target / INSTALL_META)
-    if not raw:
+    path = target / INSTALL_META
+    if path.is_symlink():
+        raise ValueError(f"{path} 是链接，无法确认安装记录归属；未改写任何文件")
+    if not path.exists() and not path.is_symlink():
         return {}
+    raw = read_text(path)
+    if raw is None or not raw.strip():
+        raise ValueError(f"{path} 为空、非 UTF-8 或不可读取；保留现场，未改写安装记录")
     try:
         value = json.loads(raw)
-        return value if isinstance(value, dict) else {}
-    except json.JSONDecodeError:
-        return {}
+    except ValueError as exc:
+        raise ValueError(f"{path} 的 JSON 损坏；请核对备份，未改写安装记录") from exc
+    if not isinstance(value, dict):
+        raise ValueError(f"{path} 必须是 JSON 对象；未改写安装记录")
+    for field in ("project_name", "kit_version", "entry_version", "owner", "layout", "source_dir", "installed_at", "updated_at"):
+        if field in value and not isinstance(value[field], str):
+            raise ValueError(f"{path} 的 {field} 必须是字符串；未改写安装记录")
+    schema = value.get("schema_version", 1)
+    if not isinstance(schema, int) or isinstance(schema, bool) or not 1 <= schema <= 3:
+        raise ValueError(f"{path} 的 schema_version 不受本版本支持；未改写安装记录")
+    for field in ("platforms", "project_entries"):
+        if field in value and (not isinstance(value[field], list) or
+                               any(not isinstance(item, str) for item in value[field])):
+            raise ValueError(f"{path} 的 {field} 必须是字符串列表；未改写安装记录")
+    for field in ("managed_hashes", "zone_base_hashes"):
+        hashes = value.get(field, {})
+        if not isinstance(hashes, dict) or any(
+                not isinstance(name, str) or not isinstance(digest, str) or
+                re.fullmatch(r"[0-9a-f]{64}", digest) is None for name, digest in hashes.items()):
+            raise ValueError(f"{path} 的 {field} 必须是文件到 SHA-256 的映射；未改写安装记录")
+    boundaries = value.get("entry_boundaries", {})
+    if not isinstance(boundaries, dict):
+        raise ValueError(f"{path} 的 entry_boundaries 必须是对象；未改写安装记录")
+    for relative, boundary in boundaries.items():
+        if (not isinstance(relative, str) or relative not in entry_targets() or not isinstance(boundary, dict) or
+                not isinstance(boundary.get("created"), bool) or
+                any(not isinstance(boundary.get(key), str) or len(boundary[key]) > limit or
+                    any(char not in "\r\n" for char in boundary[key]) for key, limit in (("before", 4), ("after", 2))) or
+                not isinstance(boundary.get("anchor_size"), int) or isinstance(boundary.get("anchor_size"), bool) or
+                not 0 <= boundary["anchor_size"] <= 128 or
+                not isinstance(boundary.get("anchor_sha256"), str) or
+                re.fullmatch(r"[0-9a-f]{64}", boundary["anchor_sha256"]) is None or
+                ("created_outside_sha256" in boundary and
+                 (not isinstance(boundary["created_outside_sha256"], str) or
+                  re.fullmatch(r"[0-9a-f]{64}", boundary["created_outside_sha256"]) is None))):
+            raise ValueError(f"{path} 的入口分隔边界损坏；未改写安装记录")
+    return value
 
 
 def save_meta(target: Path, name: str, platforms: list[str], dry_run: bool,
-              update_core: bool = True, project_entries=None) -> None:
+              update_core: bool = True, project_entries=None, entry_boundaries=None, updated: bool = False) -> None:
     old = read_meta(target)
     payload = dict(old, **{
         "project_name": name,
@@ -587,6 +890,9 @@ def save_meta(target: Path, name: str, platforms: list[str], dry_run: bool,
     payload["managed_hashes"] = hashes
     payload["zone_base_hashes"] = bases
     payload["project_entries"] = sorted(set(project_entries if project_entries is not None else old.get("project_entries", [])))
+    payload["entry_boundaries"] = dict(entry_boundaries if entry_boundaries is not None else old.get("entry_boundaries", {}))
+    if updated:
+        payload["updated_at"] = datetime.now().isoformat(timespec="seconds")
     dest = target / INSTALL_META
     if not dry_run and payload != old:
         write_lf(dest, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
@@ -661,18 +967,79 @@ def choose_platforms(target: Path, raw: str | None, dry_run: bool = False) -> li
     return parse_platforms(",".join(tokens) or "none")
 
 
-def resolve_target(raw: str) -> Path:
+def repository_target(raw: str) -> Path:
+    """Resolve a project subdirectory, rejecting Git administrative and bare paths."""
     target = Path(raw).expanduser().resolve()
     if target.is_dir():
         ok, root = git_ok(target, "rev-parse", "--show-toplevel")
         if ok and root.strip():
-            target = Path(root.strip()).resolve()
+            return Path(root.strip()).resolve()
+        ok, inside = git_ok(target, "rev-parse", "--is-inside-work-tree")
+        if ok and inside.strip() != "true":
+            raise ValueError("目标位于 Git 元数据目录（.git）或裸仓库中；请指定实际项目工作区，未写入任何文件")
+    return target
+
+
+def resolve_target(raw: str) -> Path:
+    target = repository_target(raw)
     try:
         target.relative_to(KIT_ROOT)
     except ValueError:
         return target
     raise ValueError("目标在 kit 目录内部，拒绝安装或同步。套件模板是产品源码；"
                      "请指定另一个 git 项目。")
+
+
+def command_target(args: argparse.Namespace, write: bool = False) -> Path:
+    resolved = getattr(args, "_resolved_target", None)
+    if resolved is not None:
+        return resolved
+    return resolve_target(args.target) if write else repository_target(args.target)
+
+
+@contextmanager
+def installation_lock(target: Path, dry_run: bool = False, timeout: float = 20):
+    """Serialize install, sync and uninstall across every worktree of a repository."""
+    if not is_git_repo(target):
+        yield None
+        return
+    common_path = common_git_dir(target)
+    if common_path is None:
+        raise ValueError("无法定位 Git 公共目录，未进行安装更新")
+    if dry_run:
+        # Preview reads the same normalized topology without creating a lock file.
+        yield common_path
+        return
+    lock_path = common_path / "multi-agent-collab-install.lock"
+    if lock_path.is_symlink() or (lock_path.exists() and not lock_path.is_file()):
+        raise ValueError(f"{lock_path} 不是普通锁文件；未进行安装更新")
+    with lock_path.open("a+b") as stream:
+        if stream.seek(0, os.SEEK_END) == 0:
+            stream.write(b"0")
+            stream.flush()
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                stream.seek(0)
+                if os.name == "nt":
+                    import msvcrt
+                    msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise ValueError("另一个安装、同步或卸载进程正在更新此仓库；等待超时，未抢占锁") from None
+                time.sleep(0.05)
+        try:
+            yield common_path
+        finally:
+            stream.seek(0)
+            if os.name == "nt":
+                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
 
 def entry_span(text: str, label: str):
@@ -685,15 +1052,86 @@ def entry_span(text: str, label: str):
     return begins[0].start(), ends[0].end()
 
 
+def _import_key(value: str) -> str:
+    value = value.replace("\\", "/")
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+        value = value[1:-1]
+    while value.startswith("./"):
+        value = value[2:]
+    return value.casefold() if os.name == "nt" else value
+
+
+def active_claude_imports(text: str) -> set[str]:
+    """Recognize standalone top-level imports without opening their targets."""
+    imports = set()
+    fence = None
+    comment = False
+    for index, raw in enumerate(re.split(r"\r\n|\r|\n", text)):
+        if index == 0:
+            raw = raw.lstrip("\ufeff")
+        if fence is not None:
+            close = re.match(r"^ {0,3}(`{3,}|~{3,})\s*$", raw)
+            if close and close[1][0] == fence[0] and len(close[1]) >= len(fence):
+                fence = None
+            continue
+        clean = ""
+        remaining = raw
+        while remaining:
+            if comment:
+                end = remaining.find("-->")
+                if end < 0:
+                    remaining = ""
+                    continue
+                remaining = remaining[end + 3:]
+                comment = False
+            else:
+                begin = remaining.find("<!--")
+                if begin < 0:
+                    clean += remaining
+                    remaining = ""
+                else:
+                    clean += remaining[:begin]
+                    remaining = remaining[begin + 4:]
+                    comment = True
+        opening = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", clean)
+        if opening:
+            fence = opening[1]
+            continue
+        line = clean.rstrip(" \t")
+        if re.fullmatch(r" {0,3}(?:@[^\s`]+)(?:[ \t]+@[^\s`]+)*", line):
+            imports.update(_import_key(token[1:]) for token in line.lstrip(" ").split())
+    return imports
+
+
+def _entry_newline(text: str) -> str:
+    ending = re.search(r"(\r\n|\r|\n)$", text)
+    if ending:
+        return ending[1]
+    return "\r\n" if "\r\n" in text else "\r" if "\r" in text and "\n" not in text else "\n"
+
+
+def _entry_separator(text: str) -> str:
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    newline = _entry_newline(text)
+    return "" if normalized.endswith("\n\n") else newline if normalized.endswith("\n") else newline * 2
+
+
 def entry_content(src: str, dst: str, zone: str | None, project_name: str,
                   agents: str, old: str | None = None) -> str:
     template = read_text(KIT_ROOT / src)
     if template is None:
         raise ValueError(f"缺少或无法读取 kit 源文件 {src}，未写入任何文件")
-    content = render_layout(render(template, None, project_name))
+    content = render_layout(render(template, None, project_name)).replace("\r\n", "\n").replace("\r", "\n")
+    span = entry_span(old or "", dst)
+    if dst == "CLAUDE.md":
+        outside = old or ""
+        if span is not None:
+            outside = outside[:span[0]] + "\n" + outside[span[1]:]
+        present = active_claude_imports(outside)
+        content = "\n".join(line for line in content.split("\n")
+                            if not (line.startswith("@") and _import_key(line[1:].strip()) in present))
     # WorkBuddy now reads the shared rules through a small entry too.
     block = ENTRY_BEGIN + "\n" + content.rstrip() + "\n" + ENTRY_END
-    span = entry_span(old or "", dst)
     if span is not None:
         begin, end = span
         if content.startswith("---\n") and old.startswith(("---\n", "---\r\n")):
@@ -706,7 +1144,12 @@ def entry_content(src: str, dst: str, zone: str | None, project_name: str,
             block = block.replace("\n", "\r\n")
         return old[:begin] + block + old[end:]
     if old:
-        return old + ("" if old.endswith("\n\n") else "\n" if old.endswith("\n") else "\n\n") + block + "\n"
+        if content.startswith("---\n") and old.startswith(("---\n", "---\r\n")):
+            front_end = content.find("\n---\n", 4)
+            if front_end >= 0:
+                block = ENTRY_BEGIN + "\n" + content[front_end + 5:].strip() + "\n" + ENTRY_END
+        newline = _entry_newline(old)
+        return old + _entry_separator(old) + block.replace("\n", newline) + newline
     if content.startswith("---\n"):
         end = content.find("\n---\n", 4)
         if end >= 0:
@@ -715,17 +1158,120 @@ def entry_content(src: str, dst: str, zone: str | None, project_name: str,
     return block + "\n"
 
 
+def _entry_boundary(original: str | None, before: str, after: str) -> dict:
+    original_bytes = (original or "").encode("utf-8")
+    anchor = original_bytes[-128:]
+    return {"created": original is None, "before": before, "after": after,
+            "anchor_size": len(anchor), "anchor_sha256": hashlib.sha256(anchor).hexdigest()}
+
+
+def appended_entry_boundary(original: str | None, content: str) -> dict | None:
+    span = entry_span(content, "generated entry")
+    if span is None:
+        return None
+    prefix, suffix = content[:span[0]], content[span[1]:]
+    if original is None:
+        boundary = _entry_boundary(None, "", suffix)
+        boundary["created_outside_sha256"] = hashlib.sha256(prefix.encode("utf-8")).hexdigest()
+        return boundary
+    if not prefix.startswith(original):
+        return None
+    return _entry_boundary(original, prefix[len(original):], suffix)
+
+
+def recover_entry_boundary(target: Path, relative: str, content: str) -> dict | None:
+    """Recover legacy boundary evidence only from an exact matching owned backup."""
+    span = entry_span(content, relative)
+    if span is None:
+        return None
+    prefix, suffix = content[:span[0]], content[span[1]:]
+    if suffix not in ("", "\n", "\r", "\r\n"):
+        return None
+    directory = target / STATE_DIR / "backups"
+    try:
+        directory.resolve().relative_to(target.resolve())
+        if directory.is_symlink() or getattr(directory, "is_junction", lambda: False)() or not directory.is_dir():
+            return None
+        flat = relative.replace("\\", "/").replace("/", "__")
+        backups = sorted((path for path in directory.iterdir()
+                          if path.name.startswith(flat + ".") and path.name.endswith(".bak")), reverse=True)
+        for path in backups:
+            if path.is_symlink() or not path.is_file() or path.resolve().parent != directory.resolve():
+                continue
+            original = read_text(path)
+            if original is None:
+                continue
+            try:
+                if entry_span(original, str(path)) is not None:
+                    continue
+            except ValueError:
+                continue
+            legacy = "" if original.endswith("\n\n") else "\n" if original.endswith("\n") else "\n\n"
+            for separator in dict.fromkeys((legacy, _entry_separator(original))):
+                if prefix == original + separator:
+                    return _entry_boundary(original, separator, suffix)
+    except (OSError, ValueError):
+        return None
+    return None
+
+
+def remove_entry(content: str, span: tuple[int, int], boundary: dict | None) -> str:
+    prefix, suffix = content[:span[0]], content[span[1]:]
+    if boundary is not None:
+        before, after = boundary["before"], boundary["after"]
+        if before and prefix.endswith(before):
+            candidate = prefix[:-len(before)]
+            size = boundary["anchor_size"]
+            anchor = candidate.encode("utf-8")[-size:] if size else b""
+            if hashlib.sha256(anchor).hexdigest() == boundary["anchor_sha256"]:
+                prefix = candidate
+        if after and suffix.startswith(after):
+            suffix = suffix[len(after):]
+    return prefix + suffix
+
+
+class FilePlan(list):
+    """Keep two-field plan rows compatible while carrying their original bytes."""
+
+    def __init__(self):
+        super().__init__()
+        self.preimages = {}
+
+    def remember(self, path: Path, original: str | None) -> None:
+        if original is None and path.exists():
+            if not path.is_file():
+                raise ValueError(f"{path} 不是普通文件，拒绝写入并保留现场")
+            raise ValueError(f"{path} 非 UTF-8、不可读取或已在读取后出现，拒绝旧计划并保留现场")
+        content = original.encode("utf-8") if original is not None else None
+        if path in self.preimages and self.preimages[path] != content:
+            raise ValueError(f"{path} 在规划期间发生外部改动，停止旧计划并保留现有字节")
+        self.preimages[path] = content
+
+    def extend(self, rows) -> None:
+        for path, content in getattr(rows, "preimages", {}).items():
+            if path in self.preimages and self.preimages[path] != content:
+                raise ValueError(f"{path} 在规划期间发生外部改动，停止旧计划并保留现有字节")
+            self.preimages[path] = content
+        super().extend(rows)
+
+
 def install_plan(target: Path, project_name: str, platforms: list[str],
                  sync_only: bool = False) -> list[tuple[str, str]]:
-    plan = []
-    agents = read_text(target / "AGENTS.md") or ""
+    plan = FilePlan()
+    original_agents = read_text(target / "AGENTS.md")
+    plan.remember(target / "AGENTS.md", original_agents)
+    plan.remember(target / INSTALL_META, read_text(target / INSTALL_META))
+    plan.remember(target / ".gitignore", read_text(target / ".gitignore"))
+    agents = original_agents or ""
     for src, dst, zone in ([] if sync_only else CORE_FILES):
         template = read_text(KIT_ROOT / src)
         if template is None:
             raise ValueError(f"缺少或无法读取 kit 源文件 {src}，未写入任何文件")
         old = read_text(target / dst)
+        plan.remember(target / dst, old)
         if dst.endswith("/RULES.md") and old is None and STATE_DIR == ".agents":
             old = read_text(target / "AGENTS.md")
+            plan.remember(target / "AGENTS.md", old)
         if zone == "__entry__":
             plan.append((dst, entry_content(src, dst, zone, project_name, agents, old)))
             continue
@@ -742,14 +1288,20 @@ def install_plan(target: Path, project_name: str, platforms: list[str],
             if zone and (target / dst).exists() and (old is None or "mac:zone:" not in old):
                 print(f"  ⚠ {dst} 非 UTF-8 或没有定制区标记，定制内容无法自动迁移；"
                       "覆盖前会字节备份，安装后请比对备份补回项目定制。")
+        if old is not None and dst.endswith(".md"):
+            content = content.replace("\r\n", "\n").replace("\r", "\n").replace("\n", _entry_newline(old))
+            if old.startswith("\ufeff") and not content.startswith("\ufeff"):
+                content = "\ufeff" + content
         if dst == "AGENTS.md":
             agents = content
         plan.append((dst, content))
     if sync_only:
         plan.append(("AGENTS.md", entry_content("platforms/agents-entry.md", "AGENTS.md", None, project_name, agents, agents)))
     for src, dst, zone in platform_files(platforms):
+        old = read_text(target / dst)
+        plan.remember(target / dst, old)
         plan.append((dst, entry_content(src, dst, zone, project_name, agents,
-                                        read_text(target / dst))))
+                                        old)))
     return plan
 
 
@@ -816,6 +1368,12 @@ def unignored_paths(target: Path, paths: list[str], project_entries=None) -> lis
 
 
 def apply_install_plan(target: Path, plan: list[tuple[str, str]], dry_run: bool) -> dict:
+    if not dry_run and _install_transaction.get() is None:
+        with installation_transaction():
+            return apply_install_plan(target, plan, dry_run)
+    transaction = _install_transaction.get()
+    if transaction is not None:
+        transaction.expect(getattr(plan, "preimages", {}))
     paths = [dst for dst, _content in plan] + [INSTALL_META]
     preflight(target, paths + [".gitignore"], dry_run)
     if dry_run:
@@ -826,10 +1384,23 @@ def apply_install_plan(target: Path, plan: list[tuple[str, str]], dry_run: bool)
     ownership_preflight(target, plan)
     meta = read_meta(target)
     project_entries = set(meta.get("project_entries", []))
+    boundaries = dict(meta.get("entry_boundaries", {}))
     for path in paths:
         old = read_text(target / path)
         if path in entry_targets() and old is not None and path not in meta.get("managed_hashes", {}) and LEGACY_ENTRY_BEGIN not in old:
             project_entries.add(path)
+    for path, content in plan:
+        if path not in entry_targets():
+            continue
+        original = read_text(target / path)
+        if original is None or entry_span(original, path) is None:
+            boundary = appended_entry_boundary(original, content)
+        else:
+            boundary = boundaries.get(path) or recover_entry_boundary(target, path, original)
+        if boundary is not None:
+            boundaries[path] = boundary
+    if transaction is not None:
+        transaction.verify_inputs()
     print("【git 本地忽略】")
     update_gitignore(target, dry_run)
     ignore_paths = list(dict.fromkeys([dst for _src, dst, _zone in CORE_FILES] + paths))
@@ -844,7 +1415,7 @@ def apply_install_plan(target: Path, plan: list[tuple[str, str]], dry_run: bool)
         if missing:
             raise ValueError(f"以下路径未被忽略：{', '.join(missing)}。请检查 .gitignore 的反向规则；"
                              "本次只更新了 Git 忽略标记区，未写入规则文件。")
-    stats = {"write": 0, "skip": 0, "project_entries": sorted(project_entries)}
+    stats = {"write": 0, "skip": 0, "project_entries": sorted(project_entries), "entry_boundaries": boundaries}
     print("【文件】")
     for dst, content in plan:
         install_file(target / dst, content, target, dry_run, stats)
@@ -885,6 +1456,12 @@ def update_gitignore(target: Path, dry_run: bool) -> None:
 
 
 def zone_base_hash(text: str) -> str:
+    text = text[1:] if text.startswith("\ufeff") else text
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(ZONE_RE.sub(lambda m: m[1] + m[4], normalized).encode("utf-8")).hexdigest()
+
+
+def legacy_zone_base_hash(text: str) -> str:
     return hashlib.sha256(ZONE_RE.sub(lambda m: m[1] + m[4], text.replace("\r\n", "\n")).encode("utf-8")).hexdigest()
 
 
@@ -915,7 +1492,7 @@ def ownership_preflight(target: Path, plan: list[tuple[str, str]]) -> None:
             continue
         # Explicit customization zones are an established, lossless upgrade contract.
         if rel.endswith(("/RULES.md", "/TROUBLESHOOTING.md")) and extract_zones(old):
-            if zone_base_hash(old) == meta.get("zone_base_hashes", {}).get(rel):
+            if meta.get("zone_base_hashes", {}).get(rel) in (zone_base_hash(old), legacy_zone_base_hash(old)):
                 continue
             template = next((read_text(KIT_ROOT / src) for src, dst, _z in CORE_FILES if dst == rel), None)
             if template and render_layout(render(template, old, meta.get("project_name", target.name))) == old:
@@ -924,7 +1501,12 @@ def ownership_preflight(target: Path, plan: list[tuple[str, str]]) -> None:
 
 
 def policy_plan(target: Path, args=None):
+    plan = FilePlan()
+    plan.remember(target / POLICY_FILE, read_text(target / POLICY_FILE))
+    plan.remember(target / POLICY_DOC, read_text(target / POLICY_DOC))
     primary = primary_worktree(target)
+    if primary is not None and primary != target:
+        plan.remember(primary / POLICY_FILE, read_text(primary / POLICY_FILE))
     # A fresh isolated installation must not adopt another tool's .agents/policy.json.
     if STATE_DIR != ".agents" and primary in (None, target) and not (target / POLICY_FILE).exists():
         current = build_policy()
@@ -943,13 +1525,14 @@ def policy_plan(target: Path, args=None):
             raise ValueError(f"请在主工作区 {primary} 修改仓库策略，再同步各 worktree")
     else:
         policy = current
-    return [(POLICY_FILE, json.dumps(policy, ensure_ascii=False, indent=2) + "\n"),
-            (POLICY_DOC, render_policy(policy))]
+    plan.extend([(POLICY_FILE, json.dumps(policy, ensure_ascii=False, indent=2) + "\n"),
+                 (POLICY_DOC, render_policy(policy))])
+    return plan
 
 
 def cmd_install(args: argparse.Namespace) -> int:
     try:
-        target = resolve_target(args.target)
+        target = command_target(args, write=True)
     except ValueError as exc:
         # 保留自安装保护原有的 stdout 诊断契约。
         print(f"[FAIL] {exc}")
@@ -967,7 +1550,8 @@ def cmd_install(args: argparse.Namespace) -> int:
     plan = install_plan(target, project_name, platforms)
     plan.extend(policy_plan(target, args))
     stats = apply_install_plan(target, plan, args.dry_run)
-    save_meta(target, project_name, platforms, args.dry_run, project_entries=stats["project_entries"])
+    save_meta(target, project_name, platforms, args.dry_run, project_entries=stats["project_entries"],
+              entry_boundaries=stats["entry_boundaries"])
     for name in platforms:
         if name in NATIVE_PLATFORMS:
             print(f"  ✔ {PLATFORM_LABELS[name]}：{NATIVE_AGENTS_PLATFORM_HINT}")
@@ -980,8 +1564,111 @@ def cmd_install(args: argparse.Namespace) -> int:
           f"旧版备份统一在 {STATE_DIR}/backups/。")
     print(f'体检：python "{KIT_ROOT / "install.py"}" doctor "{target}"')
     print(f'新增平台：python "{KIT_ROOT / "install.py"}" sync "{target}" --platforms cursor')
+    print(f'完整更新：python {layout_path("tools/agents_update.py")} --root "{target}"')
     print(f"项目策略：{target / POLICY_DOC}（配置不修改实际 Git 分支）")
     return 0
+
+
+def version_core(value: str):
+    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?", value)
+    return tuple(int(part) for part in match.groups()) if match else None
+
+
+def installed_update(args: argparse.Namespace) -> dict:
+    target = command_target(args, write=True)
+    meta = read_meta(target)
+    if not meta or meta.get("owner") not in (None, "multi-agent-collab"):
+        raise ValueError("项目没有可核验的套件安装记录；首次安装请用 install，更新不会自动认领目录")
+    installed = meta.get("kit_version", "unknown")
+    before, after = version_core(installed), version_core(KIT_VERSION)
+    if after is None:
+        raise ValueError("套件源版本无效，停止更新")
+    if before is not None and after < before and not args.allow_downgrade:
+        raise ValueError(f"已安装 {installed}，本地套件源为 {KIT_VERSION}；拒绝误降级。确认需要时显式 --allow-downgrade")
+    platforms = saved_platforms(target)
+    if platforms is None:
+        raise ValueError("无法恢复已选平台；请用 install --dry-run 检查旧版安装记录")
+    name = load_project_name(target, None)
+    plan = install_plan(target, name, platforms)
+    plan.extend(policy_plan(target))
+    paths = [rel for rel, _content in plan] + [INSTALL_META]
+    changed = [rel for rel, content in plan if read_text(target / rel) != content]
+    if read_text(target / ".gitignore") != gitignore_content(target):
+        changed.append(".gitignore")
+    project_entries = set(meta.get("project_entries", []))
+    for rel, _content in plan:
+        old = read_text(target / rel)
+        if rel in entry_targets() and old is not None and rel not in meta.get("managed_hashes", {}) and LEGACY_ENTRY_BEGIN not in old:
+            project_entries.add(rel)
+    ignores = ["/" + STATE_DIR + "/"] + ["/" + rel for rel in paths
+               if (rel in entry_targets() and rel not in project_entries) or rel.startswith("tools/agents_")]
+    for exclude in exclude_paths(target):
+        current = read_text(exclude)
+        if current is None and exclude.exists():
+            raise ValueError(f"{exclude} 非 UTF-8 或不可读取，停止更新")
+        if exclude_content(current or "", ignores) != (current or ""):
+            try:
+                changed.append(exclude.relative_to(target).as_posix())
+            except ValueError:
+                changed.append(str(exclude))
+    metadata_changed = (meta.get("kit_version") != KIT_VERSION or meta.get("entry_version") != KIT_VERSION or
+                        meta.get("source_dir") != str(KIT_ROOT) or meta.get("schema_version") != 3 or
+                        meta.get("owner") != "multi-agent-collab" or meta.get("layout") != STATE_DIR or
+                        meta.get("platforms") != platforms or
+                        any(rel not in meta.get("managed_hashes", {}) for _src, rel, _zone in CORE_FILES + platform_files(platforms)))
+    if changed or metadata_changed:
+        changed.append(INSTALL_META)
+    changed = list(dict.fromkeys(changed))
+    result = {"ok": True, "root": str(target), "source": str(KIT_ROOT),
+              "installed_version": installed, "available_version": KIT_VERSION,
+              "platforms": platforms, "changed_files": changed, "update_available": bool(changed),
+              "dry_run": bool(args.dry_run), "applied": False, "restart_required": False}
+    if args.dry_run or not changed:
+        preflight(target, paths + [".gitignore"], True)
+        ownership_preflight(target, plan)
+        transaction = _install_transaction.get()
+        if transaction is not None:
+            transaction.verify_inputs()
+    if args.diff:
+        for rel, content in plan:
+            old = read_text(target / rel) or ""
+            if old != content:
+                print("".join(difflib.unified_diff(old.splitlines(True), content.splitlines(True),
+                                                 fromfile=rel, tofile=rel + " (updated)")))
+    if not args.dry_run and changed:
+        stats = apply_install_plan(target, plan, False)
+        save_meta(target, name, platforms, False, project_entries=stats["project_entries"],
+                  entry_boundaries=stats["entry_boundaries"], updated=True)
+        result.update(applied=True, restart_required=True, writes=stats["write"], skipped=stats["skip"])
+    return result
+
+
+def cmd_update(args: argparse.Namespace) -> int:
+    output = io.StringIO()
+    with redirect_stdout(output):
+        result = installed_update(args)
+    notice = notification_for_target(Path(result["root"]), args)
+    if notice:
+        result["notifications"] = notice
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(f"multi-agent-collab 更新  {result['root']}")
+        print(f"  本地源：{result['source']}")
+        print(f"  版本：{result['installed_version']} → {result['available_version']}")
+        print(f"  沿用平台：{', '.join(result['platforms']) or 'none'}")
+        if result["changed_files"]:
+            print("  变更：" + ", ".join(result["changed_files"]))
+        else:
+            print("已是当前本地套件内容，无需重写文件。")
+        if args.diff:
+            print(output.getvalue(), end="")
+        if result["applied"]:
+            print("更新完成；已保留项目定制、策略、会话及备份。重启长驻看板，已有对话重读变更规则。")
+        elif args.dry_run and result["update_available"]:
+            print("仅检查/预览，未写入文件；省略 --check/--dry-run 执行更新，--diff 查看详细差异。")
+        print_notification(notice)
+    return 1 if args.check and result["update_available"] else 0
 
 
 # --------------------------------------------------------------------------- #
@@ -989,7 +1676,7 @@ def cmd_install(args: argparse.Namespace) -> int:
 # --------------------------------------------------------------------------- #
 
 def cmd_doctor(args: argparse.Namespace) -> int:
-    target = Path(args.target).expanduser().resolve()
+    target = command_target(args)
     fails, warns = 0, 0
 
     def ok(msg: str) -> None:
@@ -1034,6 +1721,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         warn(f"未找到基线 {policy['base_branch']}；请按项目实际流程确认，不会自动建立远端分支")
 
     print("\n【核心文件】")
+    unsafe_tools = set()
+    managed_hashes = meta.get("managed_hashes", {})
     main_wt = primary_worktree(target)
     linked = main_wt is not None and main_wt != target
     sibling_ready = linked and main_wt is not None and all(
@@ -1044,6 +1733,14 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         p = target / dst_rel
         if p.is_file():
             ok(dst_rel)
+            if _src.startswith("tools/"):
+                expected_hash = managed_hashes.get(dst_rel)
+                if expected_hash is None:
+                    warn(f"{dst_rel} 缺少安装摘要；无法确认完整性，不执行该工具")
+                    unsafe_tools.add(dst_rel)
+                elif hashlib.sha256(p.read_bytes()).hexdigest() != expected_hash:
+                    fail(f"{dst_rel} 与安装摘要不符；请核对本地修改，不执行该工具")
+                    unsafe_tools.add(dst_rel)
         elif sibling_ready:
             warn(f"{dst_rel} 本 worktree 未拷贝 —— 在本目录重跑 install.py 即可补齐"
                  "（忽略规则已在 git 层生效）")
@@ -1108,7 +1805,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
     print("\n【看板冒烟测试】")
     board = target / layout_path("tools/agents_status.py")
-    if board.is_file():
+    if board.is_file() and not unsafe_tools:
         for mode, extra in (("JSON", ["--json"]), ("人类模式", [])):
             try:
                 r = subprocess.run(
@@ -1122,11 +1819,13 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                     fail(f"看板{mode}异常（rc={r.returncode}）\n{combined[-300:]}")
             except Exception as e:
                 fail(f"看板{mode}跑不起来：{e}")
+    elif board.is_file() and unsafe_tools:
+        warn("发现未确认完整性的协作工具，跳过看板执行，避免加载被修改的代码")
     elif sibling_ready:
         warn("本 worktree 没有 tools/agents_status.py，重跑 install.py 补齐后再体检")
 
     session_tool = target / layout_path("tools/agents_session.py")
-    if session_tool.is_file():
+    if session_tool.is_file() and not unsafe_tools:
         result = subprocess.run([sys.executable, str(session_tool), "--help"], cwd=str(target),
                                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
         (ok if result.returncode == 0 else fail)("会话登记工具可运行" +
@@ -1155,13 +1854,228 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 # mirror
 # --------------------------------------------------------------------------- #
 
+SYNC_CORE_MAX_BYTES = 1024 * 1024
+SYNC_SESSION_REQUIREMENTS = {
+    "activate": {"--agent", "--task", "--files", "--no-activity"},
+    "run": {"--agent"},
+    "finish": {"--standby", "--no-activity"},
+    "check": {"--session", "--no-activity"},
+    "heartbeat": {"--no-activity"},
+    "resume": {"--no-activity"},
+}
+
+
+def session_cli_contract(tree: ast.AST) -> dict[str, set[str]]:
+    """Read literal argparse declarations without executing installed code."""
+    unknown = object()
+    aliases, constructors, globals_ = set(), set(), {}
+    contracts, used, functions, serial, steps = {}, set(), [], [0], [0]
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            aliases.update(item.asname or item.name for item in node.names if item.name == "argparse")
+        elif isinstance(node, ast.ImportFrom) and node.module == "argparse":
+            constructors.update(item.asname or item.name for item in node.names if item.name == "ArgumentParser")
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "main":
+            functions.append(node)
+
+    def literal(node, values):
+        if isinstance(node, ast.Constant) and isinstance(node.value, (str, int, bool, type(None))):
+            return node.value
+        if isinstance(node, ast.Name):
+            return values.get(node.id, unknown)
+        if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+            items = [literal(item, values) for item in node.elts]
+            return unknown if any(item is unknown for item in items) else tuple(items)
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+            value = literal(node.operand, values)
+            return unknown if value is unknown else not value
+        if isinstance(node, ast.Compare) and len(node.ops) == 1:
+            left, right = literal(node.left, values), literal(node.comparators[0], values)
+            if left is unknown or right is unknown:
+                return unknown
+            operation = node.ops[0]
+            if isinstance(operation, (ast.Eq, ast.Is)):
+                return left == right
+            if isinstance(operation, (ast.NotEq, ast.IsNot)):
+                return left != right
+            if isinstance(operation, (ast.In, ast.NotIn)) and isinstance(right, (tuple, str)):
+                if isinstance(right, str) and not isinstance(left, str):
+                    return unknown
+                contains = left in right
+                return not contains if isinstance(operation, ast.NotIn) else contains
+        return unknown
+
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            value = literal(node.value, globals_)
+            for target in node.targets:
+                if isinstance(target, ast.Name) and value is not unknown:
+                    globals_[target.id] = value
+
+    def call(node, values, parsers, declarations):
+        if not isinstance(node, ast.Call):
+            return None
+        method = node.func
+        if declarations and ((isinstance(method, ast.Name) and method.id in constructors) or
+                (isinstance(method, ast.Attribute) and method.attr == "ArgumentParser" and
+                 isinstance(method.value, ast.Name) and method.value.id in aliases)):
+            serial[0] += 1
+            key = serial[0]
+            contracts.setdefault(key, {})
+            return ("root", key)
+        if not isinstance(method, ast.Attribute) or not isinstance(method.value, ast.Name):
+            return None
+        receiver = parsers.get(method.value.id)
+        if not receiver:
+            return None
+        if method.attr == "parse_args" and receiver[0] == "root":
+            used.add(receiver[1])
+        elif declarations and method.attr == "add_subparsers" and receiver[0] == "root":
+            return ("group", receiver[1])
+        elif declarations and method.attr == "add_parser" and receiver[0] == "group" and node.args:
+            command = literal(node.args[0], values)
+            if isinstance(command, str):
+                contracts[receiver[1]].setdefault(command, set())
+                return ("command", receiver[1], command)
+        elif declarations and method.attr == "add_argument" and receiver[0] == "command":
+            flags = [literal(argument, values) for argument in node.args]
+            contracts[receiver[1]][receiver[2]].update(flag for flag in flags if isinstance(flag, str) and flag.startswith("--"))
+        return None
+
+    def statements(nodes, values, parsers, declarations=True):
+        for node in nodes:
+            steps[0] += 1
+            if steps[0] > 20000:
+                raise ValueError("会话 parser 字面声明超过核验上限")
+            if isinstance(node, ast.Assign):
+                parsed = call(node.value, values, parsers, declarations)
+                value = literal(node.value, values)
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        parsers.pop(target.id, None)
+                        values.pop(target.id, None)
+                        if parsed:
+                            parsers[target.id] = parsed
+                        elif value is not unknown:
+                            values[target.id] = value
+            elif isinstance(node, (ast.Expr, ast.Return)):
+                call(node.value, values, parsers, declarations)
+            elif isinstance(node, ast.For) and isinstance(node.target, ast.Name):
+                choices = literal(node.iter, values)
+                if isinstance(choices, tuple) and len(choices) <= 128:
+                    for choice in choices:
+                        child_values, child_parsers = dict(values), dict(parsers)
+                        child_values[node.target.id] = choice
+                        statements(node.body, child_values, child_parsers, declarations)
+                    if choices:
+                        values.update(child_values)
+                        parsers.update(child_parsers)
+            elif isinstance(node, ast.If):
+                condition = literal(node.test, values)
+                if condition is unknown:
+                    # Unknown runtime conditions do not prove CLI declarations.
+                    # Still identify an existing parser's argument consumption.
+                    statements(node.body, dict(values), dict(parsers), False)
+                    statements(node.orelse, dict(values), dict(parsers), False)
+                else:
+                    statements(node.body if condition else node.orelse, values, parsers, declarations)
+            elif isinstance(node, ast.Try):
+                statements(node.body + node.orelse + node.finalbody, dict(values), dict(parsers), False)
+                for handler in node.handlers:
+                    statements(handler.body, dict(values), dict(parsers), False)
+
+    if len(functions) != 1:
+        return {}
+    statements(functions[0].body, dict(globals_), {})
+    active = [contracts[key] for key in used if key in contracts]
+    if not active:
+        return {}
+    commands = set.intersection(*(set(item) for item in active))
+    return {name: set.intersection(*(item[name] for item in active)) for name in commands}
+
+
+def _read_sync_core(target: Path, relative: str) -> ast.AST:
+    path = target / relative
+    try:
+        if path.resolve() != path.absolute():
+            raise ValueError("链接或路径别名")
+        path.resolve().relative_to(target.resolve())
+        for component in (path, *path.parents):
+            if component == target:
+                break
+            info = component.lstat()
+            if stat.S_ISLNK(info.st_mode) or (os.name == "nt" and getattr(info, "st_file_attributes", 0) & 0x400):
+                raise ValueError("链接或 junction")
+        before = path.lstat()
+        if not stat.S_ISREG(before.st_mode):
+            raise ValueError("不是普通文件")
+        with path.open("rb") as stream:
+            opened = os.fstat(stream.fileno())
+            data = stream.read(SYNC_CORE_MAX_BYTES + 1)
+        after = path.lstat()
+        signature = lambda info: (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+        if signature(before) != signature(opened) or signature(before) != signature(after):
+            raise ValueError("核验期间文件发生变化")
+        if not data or len(data) > SYNC_CORE_MAX_BYTES:
+            raise ValueError("为空或超过 1 MiB 读取上限")
+        tree = ast.parse(data.decode("utf-8-sig"), filename=relative)
+        if not tree.body or sum(1 for _node in ast.walk(tree)) > 100000:
+            raise ValueError("AST 超过核验上限")
+        transaction = _install_transaction.get()
+        if transaction is not None:
+            transaction.observe(path, data)
+        return tree
+    except (ValueError, OSError, UnicodeError, SyntaxError, RecursionError, MemoryError) as exc:
+        # Never echo user code or execute it to obtain a help screen.
+        raise ValueError(f"无法核验已安装核心 {relative}（{type(exc).__name__}）；"
+                         "请先用完整 update / install 升级核心，再执行 sync / mirror；未同步入口") from None
+
+
+def ensure_sync_compatibility(target: Path) -> None:
+    """New entries require installed capabilities, independent of version/hash."""
+    trees = {src: _read_sync_core(target, relative) for src, relative, _zone in CORE_FILES
+             if src.startswith("tools/agents_") and src.endswith(".py")}
+    symbols = {}
+    for src, tree in trees.items():
+        names = set()
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                names.add(node.name)
+            elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                names.update(child.id for assigned in targets for child in ast.walk(assigned) if isinstance(child, ast.Name))
+            elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                names.update(item.asname or item.name.split(".")[0] for item in node.names)
+        symbols[Path(src).stem] = names
+    for src, tree in trees.items():
+        name = Path(src).stem
+        if name in {"agents_session", "agents_status", "agents_messages", "agents_update", "agents_processes"} and "main" not in symbols[name]:
+            raise ValueError(f"已安装核心 {name} 缺少 CLI 入口；请先完整 update / install，再 sync / mirror；未同步入口")
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module in symbols:
+                missing_symbols = {item.name for item in node.names if item.name != "*"} - symbols[node.module]
+                if missing_symbols:
+                    raise ValueError(f"已安装核心 {name} 的字面依赖不完整：{node.module}；"
+                                     "请先完整 update / install，再 sync / mirror；未同步入口")
+    try:
+        contract = session_cli_contract(trees.get("tools/agents_session.py", ast.Module(body=[], type_ignores=[])))
+    except (ValueError, TypeError, KeyError, RecursionError, MemoryError):
+        raise ValueError("无法核验已安装会话 parser 字面契约；请先完整 update / install，再 sync / mirror；未同步入口") from None
+    missing = [name + (" " + ",".join(sorted(flags - contract[name])) if name in contract else "")
+               for name, flags in SYNC_SESSION_REQUIREMENTS.items() if name not in contract or flags - contract[name]]
+    if missing:
+        raise ValueError("已安装会话核心不支持当前入口要求：" + "; ".join(missing) +
+                         "。请先用完整 update / install 升级核心，再执行 sync / mirror；未同步入口")
+
+
 def cmd_sync(args: argparse.Namespace) -> int:
-    target = resolve_target(args.target)
+    target = command_target(args, write=True)
     agents = read_text(target / "AGENTS.md")
     if agents is None or not (target / (STATE_DIR + "/README.md")).is_file():
         raise ValueError("项目未安装完整协作规则，或 AGENTS.md 不是 UTF-8；请先运行 install。")
     if not (target / (STATE_DIR + "/RULES.md")).is_file():
         raise ValueError("旧版尚未建立独立协作总章；请先用 install --dry-run 核对升级差异，未改动入口")
+    ensure_sync_compatibility(target)
     platforms = choose_platforms(target, args.platforms, args.dry_run)
     project_name = load_project_name(target, None)
     print(f"multi-agent-collab 平台同步  {target}")
@@ -1173,9 +2087,11 @@ def cmd_sync(args: argparse.Namespace) -> int:
         startup = read_text(KIT_ROOT / "docs/START_HERE.md")
         if startup is None:
             raise ValueError("kit 缺少 docs/START_HERE.md")
+        plan.remember(target / (STATE_DIR + "/START_HERE.md"), None)
         plan.insert(0, (STATE_DIR + "/START_HERE.md", render_layout(startup)))
     stats = apply_install_plan(target, plan, args.dry_run)
-    save_meta(target, project_name, platforms, args.dry_run, update_core=False, project_entries=stats["project_entries"])
+    save_meta(target, project_name, platforms, args.dry_run, update_core=False, project_entries=stats["project_entries"],
+              entry_boundaries=stats["entry_boundaries"])
     prefix = "演练完成（未写盘）" if args.dry_run else "同步完成"
     print(f"{prefix}：新建/覆盖 {stats['write']} 个，相同跳过 {stats['skip']} 个。")
     print("共享入口只刷新标记区，已有启动文档及会话记录保持原样。新开对话后验证平台是否加载入口。")
@@ -1237,7 +2153,8 @@ def client_readiness(platforms: list[str], versions: bool = False) -> list[dict]
 
 
 def cmd_clients(args: argparse.Namespace) -> int:
-    platforms = parse_platforms(args.platforms) if args.platforms is not None else saved_platforms(Path(args.target).resolve())
+    target = command_target(args)
+    platforms = parse_platforms(args.platforms) if args.platforms is not None else saved_platforms(target)
     if platforms is None:
         raise ValueError("没有已保存的平台选择；请用 --platforms codex,claude 指定要检查的平台")
     rows = client_readiness(platforms, args.versions)
@@ -1273,7 +2190,7 @@ PRUNE_DIRS = [
 
 
 def cmd_uninstall(args: argparse.Namespace) -> int:
-    target = resolve_target(args.target)
+    target = command_target(args, write=True)
     meta = read_meta(target)
     if not meta or (STATE_DIR != ".agents" and meta.get("owner") != "multi-agent-collab"):
         raise ValueError("没有可确认归属的安装记录；未删除任何文件")
@@ -1293,11 +2210,13 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
         if span is None:
             continue  # Already uninstalled; keep subsequent project edits.
         start, end = span
-        clean = old[:start] + old[end:]
+        boundary = meta.get("entry_boundaries", {}).get(rel) or recover_entry_boundary(target, rel, old)
+        clean = remove_entry(old, span, boundary)
         pristine = hashlib.sha256(dest.read_bytes()).hexdigest() == hashes[rel]
         # Preserve frontmatter and all project-authored text; do not delete tracked files.
         tracked, names = git_ok(target, "ls-files", "--", rel)
-        remove = not clean.strip() and pristine and tracked and not names.strip()
+        remove = bool(boundary and boundary["created"] and pristine and tracked and not names.strip() and
+                      hashlib.sha256(clean.encode("utf-8")).hexdigest() == boundary.get("created_outside_sha256"))
         changes.append((dest, None if remove else clean))
     if args.purge_files:
         for _src, rel, _zone in CORE_FILES:
@@ -1305,13 +2224,21 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
                 continue
             dest = target / rel
             preflight(target, [rel], args.dry_run)
-            if dest.is_file() and hashlib.sha256(dest.read_bytes()).hexdigest() == hashes.get(rel):
-                changes.append((dest, None))
+            if dest.is_file():
+                original = dest.read_bytes()
+                transaction = _install_transaction.get()
+                if transaction is not None:
+                    transaction.observe(dest, original)
+                if hashlib.sha256(original).hexdigest() == hashes.get(rel):
+                    changes.append((dest, None))
+    transaction = _install_transaction.get()
+    if transaction is not None:
+        transaction.verify_inputs()
     for dest, content in changes:
         print(f"  - {'删除未修改文件' if content is None else '仅移除入口标记区'} {dest.relative_to(target)}")
         if not args.dry_run:
             if content is None:
-                dest.unlink()
+                delete_managed_file(dest)
             else:
                 write_lf(dest, content)
     print("完成：保留项目原规则、会话、策略、故障记录与备份；默认 Git 忽略继续生效，避免私有数据被误提交。")
@@ -1319,6 +2246,72 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------- #
+
+def notification_roots(target: Path) -> list[Path]:
+    def discover():
+        from agents_status import parse_worktree_porcelain
+        ok, raw = worktree_listing(target)
+        if not ok:
+            raise ValueError("无法核验 linked worktree 的消息，请修复 Git 后重新查看")
+        roots = [Path(item["path"]).resolve() for item in parse_worktree_porcelain(raw)]
+        if not roots or target not in roots:
+            raise ValueError("消息工作区清单与当前项目不一致，请重新检查")
+        return roots
+    return cached_topology(target, "notification_roots", discover)
+
+
+def notification_for_target(target: Path, args):
+    from agents_notifications import collect_notifications
+    try:
+        return collect_notifications(target, getattr(args, "agent", None), getattr(args, "session", None),
+                                     notification_roots(target))
+    except (ValueError, OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+        # The operation may already have succeeded; report the separate inspection
+        # failure without claiming that its writes never happened.
+        return {"error": str(exc)[:500]}
+
+
+def print_notification(notice) -> None:
+    if notice:
+        from agents_notifications import format_notification
+        print("[提醒检查失败] " + notice["error"] if "error" in notice else format_notification(notice))
+
+
+def invoke_project_command(args) -> int:
+    target = getattr(args, "_resolved_target", None)
+    if target is None:
+        return args.func(args)
+    if (args.cmd in ("install", "update", "upgrade", "sync", "mirror", "uninstall")
+            and not getattr(args, "dry_run", False) and not getattr(args, "check", False)):
+        from agents_notifications import human_controls, notification_identity
+        identity = notification_identity(target, getattr(args, "agent", None), getattr(args, "session", None))
+        controls = human_controls(notification_roots(target), identity["agent"], identity["session"])
+        if controls:
+            raise ValueError("先处理暂停/取消/避让指令；阅读和确认不能解除控制：" +
+                             ", ".join(f"{key} ({value})" for key, value in controls.items()))
+    if (getattr(args, "agent", None) and getattr(args, "session", None)
+            and not getattr(args, "no_activity", False) and not getattr(args, "dry_run", False)
+            and not getattr(args, "check", False)):
+        from agents_activity import safe_touch_activity
+        warning = safe_touch_activity(target, args.agent, args.session, "install." + args.cmd).get("warning")
+        if warning:
+            print("[活动记录失败] " + warning, file=sys.stderr)
+    if args.cmd in ("update", "upgrade"):
+        return args.func(args)
+    if getattr(args, "json", False):
+        output = io.StringIO()
+        with redirect_stdout(output):
+            result = args.func(args)
+        payload = json.loads(output.getvalue())
+        notice = notification_for_target(target, args)
+        if notice and isinstance(payload, dict):
+            payload["notifications"] = notice
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return result
+    result = args.func(args)
+    print_notification(notification_for_target(target, args))
+    return result
+
 
 def main() -> int:
     for stream in (sys.stdout, sys.stderr):
@@ -1344,6 +2337,15 @@ def main() -> int:
     p_inst.add_argument("--task-prefixes", default=None, help="允许的任务分支前缀，逗号分隔，均以 / 结尾")
     p_inst.add_argument("--protect-branches", default=None, help="额外保护分支，逗号分隔；核心主干始终保护")
     p_inst.set_defaults(func=cmd_install)
+
+    p_upd = sub.add_parser("update", aliases=["upgrade"], help="完整更新已安装项目，沿用平台、策略和定制")
+    p_upd.add_argument("target", nargs="?", default=".")
+    p_upd.add_argument("--check", action="store_true", help="只检查内容变化；0已最新，1可更新，2错误")
+    p_upd.add_argument("--dry-run", action="store_true", help="只预览变更列表，不写文件")
+    p_upd.add_argument("--diff", action="store_true", help="同时显示详细文本差异")
+    p_upd.add_argument("--json", action="store_true", help="输出结构化更新结果")
+    p_upd.add_argument("--allow-downgrade", action="store_true", help="明确允许使用较低版本的本地套件源")
+    p_upd.set_defaults(func=cmd_update)
 
     p_doc = sub.add_parser("doctor", help="体检安装结果")
     p_doc.add_argument("target", nargs="?", default=".")
@@ -1379,15 +2381,52 @@ def main() -> int:
     p_un.add_argument("--dry-run", action="store_true")
     p_un.set_defaults(func=cmd_uninstall)
 
+    for project_parser in (p_inst, p_upd, p_doc, p_sync, p_clients, p_mir, p_un):
+        project_parser.add_argument("--agent", help="当前平台，用于定向消息提示")
+        project_parser.add_argument("--session", help="当前会话 ID，用于消息阅读回执隔离")
+        project_parser.add_argument("--no-activity", action="store_true", help="只读审计，不更新自己的最近活动")
+
     args = ap.parse_args()
+    if args.cmd in ("update", "upgrade") and args.check:
+        args.dry_run = True
     try:
         if hasattr(args, "target"):
-            layout_target = Path(args.target).expanduser().resolve()
-            ok, top = git_ok(layout_target, "rev-parse", "--show-toplevel") if layout_target.is_dir() else (False, "")
-            configure_layout(Path(top.strip()).resolve() if ok and top.strip() else layout_target)
-        return args.func(args)
+            if args.cmd in ("install", "update", "upgrade", "sync", "mirror", "uninstall"):
+                try:
+                    layout_target = resolve_target(args.target)
+                except ValueError as exc:
+                    if args.cmd == "install":
+                        print(f"[FAIL] {exc}")
+                        return 2
+                    raise
+                if args.cmd in ("update", "upgrade"):
+                    configure_layout(layout_target)
+                    existing = read_meta(layout_target)
+                    if not existing or existing.get("owner") not in (None, "multi-agent-collab"):
+                        raise ValueError("项目没有可核验的套件安装记录；首次安装请用 install")
+                if args.cmd in ("sync", "mirror"):
+                    # Refuse obsolete cores before creating a new system lock.
+                    # cmd_sync verifies again under the shared lock/transaction.
+                    configure_layout(layout_target)
+                    ensure_sync_compatibility(layout_target)
+                with installation_lock(layout_target, args.dry_run) as common:
+                    with git_topology_scope(layout_target, common):
+                        with installation_transaction():
+                            # Observe layout metadata before deriving the write plan.
+                            configure_layout(layout_target)
+                            args.target = str(layout_target)
+                            args._resolved_target = layout_target
+                            return invoke_project_command(args)
+            layout_target = repository_target(args.target)
+            configure_layout(layout_target)
+            args.target = str(layout_target)
+            args._resolved_target = layout_target
+        return invoke_project_command(args)
     except (ValueError, OSError, subprocess.TimeoutExpired) as exc:
-        print(f"[FAIL] {exc}", file=sys.stderr)
+        if getattr(args, "json", False):
+            print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
+        else:
+            print(f"[FAIL] {exc}", file=sys.stderr)
         return 2
 
 
