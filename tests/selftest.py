@@ -22,6 +22,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import traceback
 import unittest
 from pathlib import Path
 
@@ -113,9 +114,20 @@ PLATFORM_TARGETS = [dst for _src, dst, _zone in inst.platform_files(inst.ALL_PLA
 
 def run(*args: str, cwd: Path, timeout: int = 90,
         env: dict | None = None) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        list(args), cwd=str(cwd), capture_output=True, text=True,
-        encoding="utf-8", errors="replace", timeout=timeout, env=env)
+    command = list(args)
+    if command and command[0] == "git":
+        found = shutil.which("git", path=env.get("PATH") if env is not None else None)
+        command[0] = inst.prefer_native_git(found) or command[0]
+    try:
+        return subprocess.run(
+            command, cwd=str(cwd), capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=timeout, env=env)
+    except (subprocess.TimeoutExpired, OSError):
+        # Subtests report their collected traceback only at the batch's end.
+        # Emit it immediately so a stalled setup can be diagnosed without
+        # repeating the batch or weakening its deadline and assertions.
+        traceback.print_exc(file=sys.stderr)
+        raise
 
 
 def git_available() -> bool:
@@ -242,14 +254,15 @@ class TestBoardUnits(unittest.TestCase):
         try:
             idir = d / ".agents" / "inbox"
             idir.mkdir(parents=True)
+            stamp = __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M")
             (idir / "Q-1.md").write_text(
-                "- from: a\n- to: any\n- status: cancelled\n- created: 2026-10-11 10:00\n",
+                f"- from: a\n- to: any\n- status: cancelled\n- created: {stamp}\n",
                 encoding="utf-8")
             (idir / "Q-2.md").write_text(
-                "- from: a\n- to: any\n- status: abandoned\n- created: 2026-10-11 10:00\n",
+                f"- from: a\n- to: any\n- status: abandoned\n- created: {stamp}\n",
                 encoding="utf-8")
             (idir / "Q-3.md").write_text(
-                "- from: a\n- to: any\n- status: open\n- created: 2026-10-11 10:00\n",
+                f"- from: a\n- to: any\n- status: open\n- created: {stamp}\n",
                 encoding="utf-8")
             r = run(PY, str(KIT / "tools" / "agents_status.py"), "--json",
                     cwd=d, env=force_no_git_env())
@@ -279,7 +292,8 @@ class TestBoardUnits(unittest.TestCase):
             hb = __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M")
             (sdir / "trae-260101-0900-ab12.md").write_text(
                 "# S\n- agent: trae\n- branch: feature/ui\n- status: active\n"
-                f"- heartbeat: {hb}\n- task: 可视化快照任务\n", encoding="utf-8")
+                f"- heartbeat: {hb}\n- task: 可视化快照任务\n"
+                '- files: ["src/ui.py"]\n', encoding="utf-8")
             out = d / "dash.html"
             r = run(PY, str(KIT / "tools" / "agents_status.py"),
                     "--html", str(out), cwd=d)
@@ -312,7 +326,8 @@ class TestBoardUnits(unittest.TestCase):
             hb = __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M")
             (sdir / "trae-260101-0900-ab34.md").write_text(
                 "# S\n- agent: trae\n- branch: feature/live\n- status: active\n"
-                f"- heartbeat: {hb}\n- task: 实时看板任务\n", encoding="utf-8")
+                f"- heartbeat: {hb}\n- task: 实时看板任务\n"
+                '- files: ["src/live.py"]\n', encoding="utf-8")
             httpd = board.make_server(d, port=0, with_prs=False)
             port = httpd.server_address[1]
             t = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -580,7 +595,10 @@ class TestInstallerE2E(unittest.TestCase):
     def test_05_zone_preserved_on_upgrade(self) -> None:
         rules = self.proj / ".multi-agent-collab/RULES.md"
         original = rules.read_text(encoding="utf-8")
-        custom = original.replace("- 语言/运行时：", "- 我的门禁：cargo test --workspace\n- 语言/运行时：")
+        custom = inst.ZONE_RE.sub(
+            lambda match: match[1] + match[3] + "\n- 我的门禁：cargo test --workspace\n" + match[4]
+            if match[2] == "project-env" else match[0], original)
+        self.assertIn("cargo test --workspace", custom, "夹具必须真实修改项目定制区")
         rules.write_text(custom, encoding="utf-8")
         agents = self.proj / "AGENTS.md"
         project_rule = "\n项目额外要求：先读 architecture.md。\n"
@@ -589,7 +607,7 @@ class TestInstallerE2E(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("cargo test --workspace", rules.read_text(encoding="utf-8"))
         self.assertTrue(agents.read_text(encoding="utf-8").endswith(project_rule))
-        modified = rules.read_text(encoding="utf-8").replace("你的首要职责", "用户改写的协作职责")
+        modified = rules.read_text(encoding="utf-8") + "\n用户在受保护的区外追加了内容。\n"
         rules.write_text(modified, encoding="utf-8")
         result = install(self.proj)
         self.assertEqual(result.returncode, 2)
@@ -828,8 +846,10 @@ class TestInstallerE2E(unittest.TestCase):
         r = run("git", "worktree", "add", "-q", str(wt), "-b",
                 "feature/zombie", "develop", cwd=self.proj)
         self.assertEqual(r.returncode, 0, r.stderr)
+        installed = install(wt, "--platforms", "none")
+        self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
         sdir = wt / ".multi-agent-collab" / "sessions"
-        sdir.mkdir(parents=True)
+        sdir.mkdir(parents=True, exist_ok=True)
         (sdir / "human-251008-0600-zz99.md").write_text(
             "# S\n- agent: human\n- branch: feature/zombie\n- status: done\n"
             "- heartbeat: 2026-10-08 06:00\n", encoding="utf-8")

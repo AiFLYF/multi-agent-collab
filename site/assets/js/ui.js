@@ -1,6 +1,5 @@
 /* ============================================================
- * ui.js — 页面交互层：预加载幕布 / 导航 / 揭示动画 / 计数器 /
- *          卡片倾斜 / 代码复制 / 标签页 / 灯箱 / 自定义光标
+ * ui.js — 导航、复制、标签页、灯箱与按需动效。
  * 无依赖，file:// 与 GitHub Pages 均可运行。
  * ============================================================ */
 (function () {
@@ -9,18 +8,8 @@
   var root = document.documentElement;
   var body = document.body;
   root.className += ' js';
-  body.className += ' is-booting';              /* 幕布期间锁滚动 */
+  body.classList.add('is-loaded');
   if (location.protocol === 'file:') body.className += ' from-file';
-
-  /* 解锁兜底放在最前面：后面任何一步抛异常，都不许把页面关在幕布后面 */
-  var unlocked = false;
-  function unlockPage() {
-    if (unlocked) return;
-    unlocked = true;
-    body.classList.remove('is-booting');
-    body.classList.add('is-loaded');
-  }
-  setTimeout(unlockPage, 4000);
 
   var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var $ = function (s, c) { return (c || document).querySelector(s); };
@@ -32,86 +21,11 @@
     setTimeout(function () { srLive.textContent = msg; }, 40);
   }
 
-  /* ── 顶栏时钟 ────────────────────────────────────────────── */
-  var clockEl = $('#clock');
-  function pad2(n) { return (n < 10 ? '0' : '') + n; }
-  function tickClock() {
-    var d = new Date();
-    if (clockEl) clockEl.textContent = pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds());
+  var installData = window.MAC_INSTALL;
+  if (installData) {
+    $$('[data-kit-version]').forEach(function (el) { el.textContent = 'V' + installData.version; });
+    $$('[data-platform-count]').forEach(function (el) { el.textContent = String(installData.platforms.length); });
   }
-  tickClock();
-  setInterval(tickClock, 1000);
-
-  /* ── 预加载幕布 ────────────────────────────────────────────
-   * 场景（hero/topo）在同一批 defer 里同步就绪，如果立刻掀幕只会闪一下，
-   * 观众连字都没看清。所以设一个「最短展示时长」，并让进度永不停：
-   * 前段线性爬到 0.9，之后按指数继续缓慢爬升 —— 看着像在干活，不像卡死。
-   * 任何异常都有兜底，绝不把页面关在幕布后面。
-   */
-  var PRELOAD_MIN = 900;                 /* 最短展示时长，与 CSS 的 --pre-dur 一致 */
-  var PRELOAD_MAX = 2600;                /* 场景迟迟不就绪的兜底 */
-  var preCount = $('#preCount');
-  var preStageEl = $('#preStage');
-  (function buildDots() {
-    var box = $('#preDots');
-    if (!box) return;
-    for (var i = 0; i < 6; i++) box.appendChild(document.createElement('i'));
-  })();
-
-  var STAGES = [
-    [0.00, 'BOOTING · 初始化画布'],
-    [0.20, 'SYNCING · 接入六个信号源'],
-    [0.50, 'CONVERGING · 汇入共享黑板'],
-    [0.82, 'READY · 规矩就位']
-  ];
-  var curStage = '';
-  /* 进度环 / 进度条 / 六个信号点由 CSS 动画驱动（见 style.css 的 --pre-dur），
-     这里只更新数字与阶段文案 —— 主线程被脚本占住时，视觉也不会停。 */
-  function setPre(p) {
-    p = Math.max(0, Math.min(1, p));
-    if (preCount) preCount.textContent = pad2(Math.round(p * 100));
-    for (var s = 0; s < STAGES.length; s++) {
-      if (p >= STAGES[s][0] && curStage !== STAGES[s][1]) {
-        curStage = STAGES[s][1];
-        if (preStageEl) preStageEl.textContent = curStage;
-      }
-    }
-  }
-  var booted = false;
-  var preTimer = null;
-  var preStart = performance.now();
-  var firstFrameAt = null;      /* 第一帧真正画出来的时刻 */
-  requestAnimationFrame(function () { firstFrameAt = performance.now(); });
-  function revealPage() {
-    if (booted) return;
-    booted = true;
-    if (preTimer) { clearInterval(preTimer); preTimer = null; }
-    setPre(1);
-    unlockPage();
-  }
-  /* 进度用 setInterval 驱动而不是 requestAnimationFrame：rAF 在后台标签页
-     会完全停摆；定时器最差只是降频，对「加载指示器」来说必须一直在走。
-     而「最短展示时长」从第一帧真正画出来开始算 —— CSS 进度动画也是那一刻
-     起跑的，两者对齐，首屏绘制再晚也一定看得到进度走完。 */
-  function preTick() {
-    if (booted) return;
-    var now = performance.now();
-    var elapsed = now - preStart;                                   /* 脚本已运行多久 */
-    var shown = firstFrameAt ? now - firstFrameAt : elapsed;        /* 幕布已可见多久 */
-    var ready = window.__sceneBoot === 'ready' || window.__sceneBoot === 'partial';
-    var p = shown < PRELOAD_MIN
-      ? (shown / PRELOAD_MIN) * 0.9
-      : 0.9 + 0.1 * (1 - Math.exp(-(shown - PRELOAD_MIN) / 2600));
-    setPre(p);
-    if ((ready && shown >= PRELOAD_MIN) ||
-        (!ready && elapsed >= PRELOAD_MAX) ||
-        (reduceMotion && shown > 160)) {
-      revealPage();
-    }
-  }
-  setPre(0);
-  preTimer = setInterval(preTick, 40);
-  setTimeout(revealPage, PRELOAD_MAX + 1800);    /* 再兜一层：确保进度条走到 100% */
 
   /* ── 滚动：进度条 + 顶栏实心化 ───────────────────────────── */
   var progressBar = $('#progressBar');
@@ -129,7 +43,11 @@
   var sections = $$('section.sec[id]');
   function scrollToSection(idx) {
     var el = sections[idx];
-    if (el) el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+    if (!el) return;
+    el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+    if (window.history && history.replaceState) history.replaceState(null, '', '#' + el.id);
+    el.setAttribute('tabindex', '-1');
+    el.focus({ preventScroll: true });
   }
   $$('[data-target]').forEach(function (btn) {
     btn.addEventListener('click', function (e) {
@@ -175,15 +93,19 @@
    */
   var burger = $('#burger');
   var menu = $('#menu');
+  var menuClose = $('#menuClose');
   var menuReturnFocus = null;
-  function menuLinks() { return $$('a[href]', menu); }
+  function menuLinks() { return $$('button, a[href]', menu); }
   function menuIsOpen() { return !!menu && menu.classList.contains('open'); }
   function openMenu() {
     if (!menu || menuIsOpen()) return;
     menuReturnFocus = document.activeElement;
+    menu.removeAttribute('inert');
     menu.classList.add('open');
+    body.classList.add('menu-open');
     menu.setAttribute('aria-hidden', 'false');
-    if (burger) { burger.classList.add('open'); burger.setAttribute('aria-expanded', 'true'); }
+    if (burger) { burger.classList.add('open'); burger.setAttribute('aria-expanded', 'true'); burger.setAttribute('aria-label', '关闭菜单'); }
+    setBackgroundInert(true, menu);
     /* 必须延后一帧再 focus：刚加上 .open 时样式还没重算，
        此刻菜单的 visibility 仍是 hidden，同步 focus() 会被浏览器拒绝 */
     function focusFirst() {
@@ -200,8 +122,11 @@
     if (!menu) return;
     var wasOpen = menuIsOpen();
     menu.classList.remove('open');
+    body.classList.remove('menu-open');
     menu.setAttribute('aria-hidden', 'true');
-    if (burger) { burger.classList.remove('open'); burger.setAttribute('aria-expanded', 'false'); }
+    menu.setAttribute('inert', '');
+    if (burger) { burger.classList.remove('open'); burger.setAttribute('aria-expanded', 'false'); burger.setAttribute('aria-label', '打开菜单'); }
+    if (wasOpen) setBackgroundInert(false);
     if (wasOpen && restoreFocus === true) {
       var back = menuReturnFocus && document.contains(menuReturnFocus) ? menuReturnFocus : burger;
       if (back) back.focus();
@@ -220,101 +145,59 @@
       closeMenu(true);
     });
   }
+  if (menuClose) menuClose.addEventListener('click', function () { closeMenu(true); });
+  if (menu) $$('a', menu).forEach(function (link) {
+    if (!link.hasAttribute('data-target')) link.addEventListener('click', function () { closeMenu(false); });
+  });
+  window.addEventListener('resize', function () {
+    if (window.innerWidth > 980 && menuIsOpen()) closeMenu(true);
+  });
 
-  /* ── 揭示动画 ────────────────────────────────────────────── */
-  var rvEls = $$('.rv');
-  if ('IntersectionObserver' in window && !reduceMotion) {
-    var io = new IntersectionObserver(function (entries) {
-      entries.forEach(function (en) {
-        if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
-      });
-    }, { threshold: 0.12, rootMargin: '0px 0px -6% 0px' });
-    rvEls.forEach(function (el) { io.observe(el); });
-    /* 兜底：瞬时滚动可能整体跳过某些元素（IO 不触发），滚动时统一巡检 */
-    window.addEventListener('scroll', function () {
-      var vh = window.innerHeight;
-      rvEls.forEach(function (el) {
-        if (!el.classList.contains('in') && el.getBoundingClientRect().top < vh * 0.92) {
-          el.classList.add('in');
-          io.unobserve(el);
-        }
-      });
-    }, { passive: true });
-  } else {
-    rvEls.forEach(function (el) { el.classList.add('in'); });
-  }
-
-  /* ── 数字滚动 ────────────────────────────────────────────── */
-  var counters = $$('[data-count]');
-  function runCounter(el) {
-    var target = parseInt(el.getAttribute('data-count'), 10) || 0;
-    if (reduceMotion || target === 0) { el.textContent = String(target); return; }
-    var t0 = performance.now(), dur = 1100;
-    function step(t) {
-      var k = Math.min((t - t0) / dur, 1);
-      var e = 1 - Math.pow(1 - k, 3);
-      el.textContent = String(Math.round(target * e));
-      if (k < 1) requestAnimationFrame(step);
-    }
-    requestAnimationFrame(step);
-  }
-  if ('IntersectionObserver' in window) {
-    var cio = new IntersectionObserver(function (entries) {
-      entries.forEach(function (en) {
-        if (en.isIntersecting) { runCounter(en.target); cio.unobserve(en.target); }
-      });
-    }, { threshold: 0.6 });
-    counters.forEach(function (el) { cio.observe(el); });
-  } else {
-    counters.forEach(runCounter);
-  }
-
-  /* ── 卡片 3D 倾斜 + 光斑 ─────────────────────────────────── */
-  if (!reduceMotion && window.matchMedia('(pointer: fine)').matches) {
-    $$('[data-tilt]').forEach(function (card) {
-      card.addEventListener('pointermove', function (e) {
-        var r = card.getBoundingClientRect();
-        var px = (e.clientX - r.left) / r.width;
-        var py = (e.clientY - r.top) / r.height;
-        card.style.setProperty('--mx', (px * 100) + '%');
-        card.style.setProperty('--my', (py * 100) + '%');
-        var rx = (py - 0.5) * -3.2, ry = (px - 0.5) * 3.2;
-        card.style.transform = 'translateY(-4px) perspective(900px) rotateX(' + rx + 'deg) rotateY(' + ry + 'deg)';
-      });
-      card.addEventListener('pointerleave', function () { card.style.transform = ''; });
-    });
-  }
+  /* 正文和事实数字立即呈现，不等待滚动或动画。 */
+  $$('.rv').forEach(function (el) { el.classList.add('in'); });
+  $$('[data-count]').forEach(function (el) { el.textContent = el.getAttribute('data-count'); });
 
   /* ── 复制（代码块按钮 + 命令表单元格） ─────────────────────
    * 按钮显示「已复制 ✓」；表格单元格本身没有按钮结构，
    * 改用 .copied 类改写 ::after，同时给读屏报一句。
    */
+  var copyNotice = $('#copyNotice');
+  var noticeTimer;
   function copyText(text, btn) {
     function feedback(message, failed) {
+      if (copyNotice) {
+        clearTimeout(noticeTimer);
+        copyNotice.hidden = false;
+        copyNotice.dataset.kind = failed ? 'error' : 'success';
+        copyNotice.textContent = failed ? '复制失败，请选择代码文字手动复制。' : '已复制到剪贴板。';
+        noticeTimer = setTimeout(function () { copyNotice.hidden = true; }, failed ? 8000 : 3800);
+      }
       if (!btn) return;
       if (!btn.dataset.copyLabel) btn.dataset.copyLabel = btn.textContent;
       clearTimeout(btn.copyTimer);
       btn.textContent = message;
-      btn.style.color = failed ? 'var(--am)' : 'var(--cy)';
-      btn.copyTimer = setTimeout(function () { btn.textContent = btn.dataset.copyLabel; btn.style.color = ''; }, 1400);
+      btn.dataset.copyState = failed ? 'error' : 'success';
+      btn.copyTimer = setTimeout(function () { btn.textContent = btn.dataset.copyLabel; delete btn.dataset.copyState; }, 2600);
     }
     function ok() {
       feedback('已复制 ✓', false);
-      announce('已复制到剪贴板');
+      if (!copyNotice) announce('已复制到剪贴板');
     }
     function fail() {
       feedback('请手动复制', true);
-      announce('未能写入剪贴板，请手动选择文本复制');
+      if (!copyNotice) announce('未能写入剪贴板，请手动选择文本复制');
     }
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(ok, function () { fallback(); });
+      try { navigator.clipboard.writeText(text).then(ok, fallback); } catch (e) { fallback(); }
     } else { fallback(); }
     function fallback() {
       var previousFocus = document.activeElement;
       var ta = document.createElement('textarea');
       ta.value = text;
       ta.style.position = 'fixed';
+      ta.style.left = '-10000px';
       ta.style.opacity = '0';
+      ta.setAttribute('readonly', '');
       document.body.appendChild(ta);
       ta.select();
       try { if (document.execCommand('copy')) ok(); else fail(); } catch (e) { fail(); }
@@ -329,24 +212,21 @@
     });
   });
   $$('.cmd-table td.cmd[data-copy]').forEach(function (td) {
-    td.setAttribute('role', 'button');
-    td.setAttribute('tabindex', '0');
-    var timer = null;
-    function flash() {
-      clearTimeout(timer);
-      td.classList.add('copied');
-      timer = setTimeout(function () { td.classList.remove('copied'); }, 1400);
-    }
-    td.addEventListener('click', function () { copyText(td.getAttribute('data-copy'), null); flash(); });
-    td.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); td.click(); }
-    });
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'command-copy';
+    button.textContent = td.textContent;
+    button.setAttribute('aria-label', '复制命令：' + td.getAttribute('data-copy'));
+    td.textContent = '';
+    td.appendChild(button);
+    button.addEventListener('click', function () { copyText(td.getAttribute('data-copy'), button); });
   });
 
   /* ── 标签页（点击 + 左右方向键，符合 ARIA tabs 模式） ────── */
   var tabs = $$('.tab');
   var panels = $$('.tabpanel');
   function selectTab(i, focus) {
+    if (!tabs.length || !tabs[i]) return;
     tabs.forEach(function (t, k) {
       var on = k === i;
       t.classList.toggle('is-on', on);
@@ -354,14 +234,20 @@
       t.setAttribute('tabindex', on ? '0' : '-1');
     });
     panels.forEach(function (p) {
-      p.classList.toggle('is-on', p.getAttribute('data-panel') === tabs[i].getAttribute('data-tab'));
+      var on = p.getAttribute('data-panel') === tabs[i].getAttribute('data-tab');
+      p.classList.toggle('is-on', on);
+      p.hidden = !on;
+      p.setAttribute('tabindex', '0');
     });
     if (focus) tabs[i].focus();
   }
   tabs.forEach(function (tab, i) {
     tab.addEventListener('click', function () { selectTab(i, false); });
     tab.addEventListener('keydown', function (e) {
-      var d = e.key === 'ArrowRight' ? 1 : (e.key === 'ArrowLeft' ? -1 : 0);
+      if (e.key === 'Home' || e.key === 'End') {
+        e.preventDefault(); selectTab(e.key === 'Home' ? 0 : tabs.length - 1, true); return;
+      }
+      var d = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : (e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0);
       if (!d) return;
       e.preventDefault();
       selectTab((i + d + tabs.length) % tabs.length, true);
@@ -375,19 +261,29 @@
   var lbTrigger = null;
   /* 灯箱打开时把背景整块 inert：hidden 只挡住了它自己，
      背后的正文对读屏虚拟光标依然可达 */
-  function setBackgroundInert(on) {
-    Array.prototype.forEach.call(document.body.children, function (el) {
-      if (el === lightbox || el.tagName === 'SCRIPT') return;
-      if (on) el.setAttribute('inert', '');
-      else el.removeAttribute('inert');
-    });
+  var inertBackground = [];
+  function setBackgroundInert(on, dialog) {
+    if (on) {
+      inertBackground = [];
+      Array.prototype.forEach.call(document.body.children, function (el) {
+        if (el === dialog || el.tagName === 'SCRIPT' || el === srLive || el === copyNotice) return;
+        inertBackground.push({element: el, wasInert: el.hasAttribute('inert')});
+        el.setAttribute('inert', '');
+      });
+    } else {
+      inertBackground.forEach(function (entry) {
+        if (!entry.wasInert) entry.element.removeAttribute('inert');
+      });
+      inertBackground = [];
+    }
   }
   function openLightbox(trigger) {
     if (!lightbox) return;
     lbTrigger = trigger || null;
     lightbox.hidden = false;
     body.classList.add('lb-open');
-    setBackgroundInert(true);
+    closeMenu(false);
+    setBackgroundInert(true, lightbox);
     if (lbClose) lbClose.focus();
     announce('看板截图已放大，按 Escape 关闭');
   }
@@ -419,65 +315,97 @@
     });
     if (!f.length) return;
     var first = f[0], last = f[f.length - 1];
-    if (e.shiftKey && document.activeElement === first) { last.focus(); e.preventDefault(); }
+    if (!scope.contains(document.activeElement)) { first.focus(); e.preventDefault(); }
+    else if (e.shiftKey && document.activeElement === first) { last.focus(); e.preventDefault(); }
     else if (!e.shiftKey && document.activeElement === last) { first.focus(); e.preventDefault(); }
   });
 
-  /* ── 第 05 章的 WebGL 按需加载 ─────────────────────────────
-   * three.js 是 712KB，放在首屏关键路径上会占住主线程（实测把加载
-   * 幕布的计数都卡成 00）。改成滚到第 05 章前 1.5 屏才开始加载，
-   * 首屏只剩 ui.js + hero.js 两个小文件。
-   */
+  /* 用户选择后才加载自带的画布资源，失败时保留静态内容。 */
+  function loadScript(source, ready, failed) {
+    var script = document.createElement('script');
+    script.src = source;
+    script.onload = ready;
+    script.onerror = failed;
+    document.body.appendChild(script);
+  }
+  var motionToggle = $('#motionToggle');
+  var motionState = 'idle';
+  if (motionToggle) motionToggle.addEventListener('click', function () {
+    if (motionState === 'loading') return;
+    if (motionState === 'ready') {
+      var active = body.classList.toggle('motion-active');
+      motionToggle.setAttribute('aria-pressed', String(active));
+      motionToggle.textContent = active ? '关闭背景动效' : '开启背景动效';
+      return;
+    }
+    motionState = 'loading';
+    motionToggle.disabled = true;
+    motionToggle.textContent = '正在加载…';
+    body.classList.add('motion-active');
+    loadScript('assets/js/hero.js', function () {
+      motionState = 'ready';
+      motionToggle.disabled = false;
+      motionToggle.setAttribute('aria-pressed', 'true');
+      motionToggle.textContent = '关闭背景动效';
+    }, function () {
+      motionState = 'idle';
+      body.classList.remove('motion-active');
+      motionToggle.disabled = false;
+      motionToggle.textContent = '重新加载背景动效';
+      announce('背景动效加载失败，页面内容仍可使用。');
+    });
+  });
+
   var topoState = 'idle';
+  var topoButton = $('#topoLoad');
+  var topoPlaceholder = $('#topoPlaceholder');
+  var topoFeedback = $('#topoLoadStatus');
+  var topoStage = $('.topo-stage');
   function loadTopo() {
     if (topoState !== 'idle') return;
     topoState = 'loading';
-    function injectTopo() {
-      var t = document.createElement('script');
-      t.src = 'assets/js/topo.js';
-      t.onerror = function () { document.documentElement.className += ' no-webgl'; };
-      document.body.appendChild(t);
+    if (topoButton) { topoButton.disabled = true; topoButton.textContent = '正在加载本地资源…'; }
+    function failed() {
+      topoState = 'idle';
+      if (topoStage) topoStage.classList.remove('topo-active');
+      if (topoButton) { topoButton.disabled = false; topoButton.textContent = '重新加载交互拓扑 ↗'; }
+      if (topoFeedback) topoFeedback.textContent = '资源加载失败，仍可查看静态拓扑。';
     }
-    var local = document.createElement('script');
-    local.src = 'vendor/three/build/three.min.js';
-    local.onload = function () { topoState = 'ready'; injectTopo(); };
-    local.onerror = function () {                     /* 本地缺失时退回 CDN */
-      var cdn = document.createElement('script');
-      cdn.src = 'https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js';
-      cdn.onload = function () { topoState = 'ready'; injectTopo(); };
-      cdn.onerror = function () { topoState = 'failed'; document.documentElement.className += ' no-webgl'; };
-      document.body.appendChild(cdn);
-    };
-    document.body.appendChild(local);
+    function injectTopo() {
+      root.classList.remove('no-webgl');
+      if (topoFeedback) topoFeedback.textContent = '';
+      if (topoStage) topoStage.classList.add('topo-active');
+      loadScript('assets/js/topo.js', function () {
+        if (root.classList.contains('no-webgl')) { failed(); return; }
+        topoState = 'ready';
+        if (topoPlaceholder) topoPlaceholder.hidden = true;
+        if (topoButton) topoButton.disabled = false;
+        var staticButton = $('#topoStatic');
+        if (staticButton) { staticButton.hidden = false; staticButton.focus({ preventScroll: true }); }
+        announce('交互拓扑已加载，可拖拽旋转。');
+      }, failed);
+    }
+    if (window.THREE) injectTopo();
+    else loadScript('vendor/three/build/three.min.js', injectTopo, failed);
   }
-  var sec5 = document.getElementById('sec-5');
-  if (sec5 && 'IntersectionObserver' in window) {
-    var tio = new IntersectionObserver(function (es) {
-      if (es[0].isIntersecting) { tio.disconnect(); loadTopo(); }
-    }, { rootMargin: '150% 0px' });
-    tio.observe(sec5);
-  } else {
+  if (topoButton) topoButton.addEventListener('click', function () {
+    if (topoState === 'ready') {
+      topoStage.classList.add('topo-active');
+      topoPlaceholder.hidden = true;
+      $('#topoStatic').hidden = false;
+      $('#topoStatic').focus({ preventScroll: true });
+      return;
+    }
     loadTopo();
-  }
-
-  /* ── 自定义光标 ──────────────────────────────────────────── */
-  var dot = $('.c-dot'), ring = $('.c-ring');
-  if (window.matchMedia('(pointer: fine)').matches && !reduceMotion) {
-    var rx = 0, ry = 0, tx = 0, ty = 0;
-    document.addEventListener('pointermove', function (e) {
-      tx = e.clientX; ty = e.clientY;
-      if (dot) { dot.style.left = tx + 'px'; dot.style.top = ty + 'px'; }
-    });
-    (function ringLoop() {
-      rx += (tx - rx) * 0.16; ry += (ty - ry) * 0.16;
-      if (ring) { ring.style.left = rx + 'px'; ring.style.top = ry + 'px'; }
-      requestAnimationFrame(ringLoop);
-    })();
-    $$('a, button, [data-hover], .cmd-table td.cmd').forEach(function (el) {
-      el.addEventListener('pointerenter', function () { if (ring) ring.classList.add('hot'); });
-      el.addEventListener('pointerleave', function () { if (ring) ring.classList.remove('hot'); });
-    });
-  } else if (dot && ring) {
-    dot.style.display = 'none'; ring.style.display = 'none';
-  }
+  });
+  var topoStatic = $('#topoStatic');
+  if (topoStatic) topoStatic.addEventListener('click', function () {
+    topoStage.classList.remove('topo-active');
+    topoPlaceholder.hidden = false;
+    topoStatic.hidden = true;
+    if (topoButton) {
+      topoButton.textContent = '显示交互拓扑 ↗';
+      topoButton.focus({ preventScroll: true });
+    }
+  });
 })();

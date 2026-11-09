@@ -3,10 +3,9 @@
 @../AGENTS.md
 @../.multi-agent-collab/START_HERE.md
 
-每次新对话先读取项目根 `AGENTS.md` 与 `.multi-agent-collab/START_HERE.md`，检查最新协作记录。
-编码前使用 `python .multi-agent-collab/tools/agents_session.py start --agent qwen --task "任务" --files <文件范围>`。
-保存返回的会话 ID，阶段间隙更新心跳、检查 inbox，完成后使用 finish 追加总结并释放占用。
-本文件使用 Qwen 的本机 QWEN.local.md 入口；团队 QWEN.md 不改写。
-其它本机说明保留在托管块外；以根总章为规则来源。
+执行启动清单，已导入的相同静态规则不重复全文读取；导入不可用时手读上述文件。
+动态状态每次开工和恢复都重查，写前登记实际范围，同任务沿用 ID。
+执行 START_HERE 的执行中与最终答复前清单；调用带自己的平台/ID，完成默认 finish --standby，未完成 handoff，核验成功再答复。
+使用 QWEN.local.md 本机入口，团队 QWEN.md 和托管块外说明保持原样。
 
-协作总章：`.multi-agent-collab/RULES.md`；项目原有规则与已确认策略继续有效。
+总章：`.multi-agent-collab/RULES.md`；项目原有规则与已确认策略继续有效。

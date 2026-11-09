@@ -4,9 +4,9 @@ trigger: always_on
 
 # {{PROJECT_NAME}} · 协作入口
 
-每次新对话开始工作前，读取项目根 `AGENTS.md` 和 `.multi-agent-collab/START_HERE.md`，按开工顺序
-检查协作看板、inbox 与近期 worklog。阶段间隙重扫 inbox，并更新自己的会话心跳。
-本入口只指向共享规则，规则变化时以磁盘上的最新内容为准。
-这是本机文件，由安装器加入 `.git/info/exclude`，不要提交。
+执行 `.multi-agent-collab/START_HERE.md`，静态规则各读一次，动态状态每次开工和恢复都重查。
+写前登记实际范围，阶段间隙检查 inbox；规则变化再读相关部分。
+执行 START_HERE 的执行中与最终答复前清单；调用带自己的平台/ID，完成默认 finish --standby，未完成 handoff，核验成功再答复。
+未跟踪的本机入口不提交，已跟踪入口按项目审查。
 
-协作总章：`.multi-agent-collab/RULES.md`；项目原有规则与已确认策略继续有效。
+总章：`.multi-agent-collab/RULES.md`；项目原有规则与已确认策略继续有效。

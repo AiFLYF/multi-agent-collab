@@ -31,7 +31,10 @@ class Rehearsal:
 
     def run(self, name, *args, cwd=None, expected=0):
         started = time.monotonic()
-        result = subprocess.run(list(map(str, args)), cwd=str(cwd or self.root), capture_output=True,
+        command = list(map(str, args))
+        if command and command[0] == "git":
+            command[0] = kit.prefer_native_git(shutil.which("git")) or command[0]
+        result = subprocess.run(command, cwd=str(cwd or self.root), capture_output=True,
                                 text=True, encoding="utf-8", errors="replace", timeout=180)
         self.steps.append({"name": name, "command": subprocess.list2cmdline(list(map(str, args))),
                            "expected": expected, "rc": result.returncode,
@@ -103,7 +106,24 @@ class Rehearsal:
             destination = cached / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(KIT / relative, destination)
-        self.run("用当前工作区版本升级核心", sys.executable, installer, "install", first)
+        changed_tool = cached / "tools/agents_status.py"
+        changed_tool.write_bytes(changed_tool.read_bytes() + b"\n# Same-version rehearsal update.\n")
+        before_update = {p.relative_to(first).as_posix(): p.read_bytes() for p in first.rglob("*") if p.is_file()}
+        preview = json.loads(self.run("检查同版本套件内容变化", sys.executable, installer, "update", first,
+                                      "--check", "--json", expected=1))
+        self.check("同版本变化被内容检查识别", preview["update_available"] and
+                   preview["installed_version"] == preview["available_version"])
+        self.run("更新预览不写盘", sys.executable, installer, "update", first, "--dry-run", "--json")
+        self.check("检查与预览保持原文件字节", before_update ==
+                   {p.relative_to(first).as_posix(): p.read_bytes() for p in first.rglob("*") if p.is_file()})
+        updater = first / ".multi-agent-collab/tools/agents_update.py"
+        self.run("从已安装入口完整更新核心", sys.executable, updater, "--root", first, "--json")
+        self.check("已安装工具等于更新源内容", (first / ".multi-agent-collab/tools/agents_status.py").read_bytes() == changed_tool.read_bytes())
+        after_update = {p.relative_to(first).as_posix(): p.read_bytes() for p in first.rglob("*") if p.is_file()}
+        self.run("重复更新已是当前内容", sys.executable, updater, "--root", first, "--json")
+        self.check("重复更新不重写字节", after_update ==
+                   {p.relative_to(first).as_posix(): p.read_bytes() for p in first.rglob("*") if p.is_file()})
+        self.run("重复内容检查返回最新", sys.executable, installer, "update", first, "--check", "--json")
         self.check("升级保留项目定制和已有记录", "REHEARSAL" in agents.read_text(encoding="utf-8") and note.read_text(encoding="utf-8") == "演练前已有的协作记录\n")
         self.run("安装体检", sys.executable, installer, "doctor", first)
         self.run("新对话开工摘要", sys.executable, first / ".multi-agent-collab/tools/agents_status.py", "--brief", cwd=first)
@@ -111,6 +131,13 @@ class Rehearsal:
         self.run("暂存共享忽略配置", "git", "add", ".gitignore", cwd=first)
         self.run("提交安装产生的共享忽略配置", "git", "commit", "-q", "-m", "chore: ignore private collaboration state", cwd=first)
         owner = self.session("登记 Codex 文件范围", first, "start", "--agent", "codex", "--task", "整理价格计算", "--files", "cart.py")
+        context = self.run("已安装工具输出有界上下文", sys.executable,
+                           first / ".multi-agent-collab/tools/agents_status.py", "--context", "--agent", "codex",
+                           "--session", owner["id"], "--max-chars", "6000", "--json", cwd=first)
+        compact = json.loads(context)
+        self.check("上下文保留策略、完整占用与任务身份", len(context) <= 6000 and compact["gate_rc"] == 0
+                   and compact["policy"]["base_branch"] == "develop"
+                   and compact["sessions"][0]["files"] == ["cart.py"])
         self.session("阻止同工作区重复写任务", first, "start", "--agent", "claude", "--task", "重复任务", "--files", "README.md", expected=1)
         self.run("先创建独立分支引用", "git", "branch", "feature/docs", "develop", cwd=first)
         self.run("校验分支引用", "git", "rev-parse", "--verify", "feature/docs", cwd=first)
@@ -121,6 +148,25 @@ class Rehearsal:
         conflict = self.session("阻止跨 worktree 的重复文件", worker, "start", "--agent", "claude", "--task", "冲突任务", "--files", "cart.py", expected=1)
         self.check("冲突原因确为文件范围", "文件范围重叠" in conflict["error"])
         peer = self.session("允许独立文件任务", worker, "start", "--agent", "claude", "--task", "完善项目说明", "--files", "README.md")
+        ai_note = first / ".multi-agent-collab/inbox/Q-ai-coordination.md"
+        ai_note.write_text(f"# 协作消息\n- from: {peer['id']}\n- to: {owner['id']}\n- status: open\n\n"
+                           "## 背景\n文档工作区已准备好，请确认价格接口。\n\n## 回复\n", encoding="utf-8")
+        notice = self.session("心跳顺带发现 AI 新消息", first, "heartbeat", owner["id"], "--agent", "codex")
+        self.check("通知只给数量和读取入口", notice.get("notifications", {}).get("unread_count") == 1
+                   and "文档工作区已准备好" not in json.dumps(notice, ensure_ascii=False))
+        reader = first / ".multi-agent-collab/tools/agents_messages.py"
+        read = self.run("按需读取并标读 AI 消息", sys.executable, reader, "read", "--agent", "codex",
+                        "--session", owner["id"], "--mark-read", "--json", cwd=first)
+        self.check("阅读正文完整且不替代任务完成", "文档工作区已准备好" in read
+                   and "- status: open" in ai_note.read_text(encoding="utf-8"))
+        notice = self.session("已读普通消息不再重复提示", first, "heartbeat", owner["id"], "--agent", "codex")
+        self.check("普通阅读回执压住重复通知", "notifications" not in notice)
+        ai_note.write_text(ai_note.read_text(encoding="utf-8").replace("- status: open", "- status: answered")
+                           + "\n价格接口已确认，可继续完善说明。\n", encoding="utf-8")
+        reply = self.session("原提问者收到已答回复提示", worker, "heartbeat", peer["id"], "--agent", "claude")
+        self.check("已答回复仍可发现", reply.get("notifications", {}).get("reply_count") == 1)
+        self.run("原提问者读取跨工作区回复", sys.executable, worker / ".multi-agent-collab/tools/agents_messages.py",
+                 "read", "--agent", "claude", "--session", peer["id"], "--mark-read", "--json", cwd=worker)
         log_path = self.root / "board-server.log"
         self.server_log = log_path.open("w", encoding="utf-8")
         self.server = subprocess.Popen([sys.executable, "-u", str(first / ".multi-agent-collab/tools/agents_status.py"), "--web", "--port", "0", "--no-open"],
@@ -139,11 +185,31 @@ class Rehearsal:
             with urllib.request.urlopen(base + "/data", timeout=10) as response:
                 return json.load(response)
         self.check("真实网页 API 聚合两个会话", len(read_board()["sessions"]) == 2)
+        pause_request = urllib.request.Request(
+            base + "/directive", data=json.dumps({"to": owner["id"], "action": "pause", "body": "暂停价格任务，等待协调。"}).encode(),
+            headers={"Content-Type": "application/json", "X-Mac-Board-Action": "1", "Origin": base})
+        with urllib.request.urlopen(pause_request, timeout=10) as response:
+            pause = json.load(response)
+        paused_note = first / ".multi-agent-collab/inbox" / pause["file"]
+        self.check("网页显式暂停类型真实保存", "- action: pause" in paused_note.read_text(encoding="utf-8"))
+        self.session("确认不能解除显式暂停", first, "resume", owner["id"], "--agent", "codex",
+                     "--ack-inbox", pause["file"], expected=1)
+        self.session("显式暂停先拦截范围变更", first, "heartbeat", owner["id"], "--agent", "codex",
+                     "--files", "cart.py", "test_cart.py", expected=1)
+        paused_note.write_text(paused_note.read_text(encoding="utf-8").replace("- status: open", "- status: closed")
+                              + "\n演练人类解除暂停，允许继续原任务。\n", encoding="utf-8")
         request = urllib.request.Request(base + "/directive", data=json.dumps({"to": "any", "body": "演练指令：完成后记录实际测试结果。"}).encode(),
                                          headers={"Content-Type": "application/json", "X-Mac-Board-Action": "1", "Origin": base})
         with urllib.request.urlopen(request, timeout=10) as response:
             directive = json.load(response)
         self.check("网页指令真实落盘", (first / ".multi-agent-collab/inbox" / directive["file"]).is_file())
+        context = self.run("上下文对未答人类指令返回告警", sys.executable,
+                           first / ".multi-agent-collab/tools/agents_status.py", "--context", "--agent", "codex",
+                           "--session", owner["id"], "--json", cwd=first, expected=1)
+        compact = json.loads(context)
+        self.check("定向上下文保留人类指令原文与原文件路径", len(context) <= 6000 and compact["inbox"]
+                   and compact["inbox"][0]["body"] == "演练指令：完成后记录实际测试结果。"
+                   and Path(compact["inbox"][0]["path"]).is_file())
         rejected = self.session("未答人类指令阻止新开工", worker, "start", "--agent", "roo", "--task", "新任务", "--files", "notes/", expected=1)
         self.check("阻止原因为人类 inbox", "人类指令" in rejected["error"])
         question = first / ".multi-agent-collab/inbox" / directive["file"]
@@ -157,7 +223,11 @@ class Rehearsal:
         self.check("恢复沿用 ID 并关闭交接留言", resumed["id"] == owner["id"] and resumed["status"] == "active" and
                    "- status: answered" in (first / handoff["inbox"]).read_text(encoding="utf-8"))
         (first / "cart.py").write_text("def total(items):\n    subtotals = [price * quantity for price, quantity in items]\n    return sum(subtotals)\n", encoding="utf-8")
-        self.run("真实业务代码测试", sys.executable, "-m", "unittest", "-q", cwd=first)
+        self.run("包装命令执行真实业务代码测试", sys.executable, first / ".multi-agent-collab/tools/agents_session.py",
+                 "--root", first, "run", owner["id"], "--agent", "codex", "--", sys.executable, "-m", "unittest", "-q", cwd=first)
+        activity_record = kit.read_text(first / ".multi-agent-collab/sessions" / (owner["id"] + ".md"))
+        self.check("业务测试记录活动但不自动结束任务", "- last_command: agents_session.run" in activity_record
+                   and "- last_activity:" in activity_record and "- status: active" in activity_record)
         content = question.read_text(encoding="utf-8").replace("- status: open", "- status: answered")
         kit.write_lf(question, content + "\n演练 agent 完成回复：python -m unittest -q，2 项业务测试通过，结果已记录。\n")
         self.check("完成后网页 API 显示已答复", not read_board()["inbox_open"] and bool(read_board()["inbox_replied"]))
@@ -169,8 +239,22 @@ class Rehearsal:
         self.run("向演练远端推送 feature 分支", "git", "push", "-q", "-u", "origin", "feature/cart-price", cwd=first)
         self.session("完成文档会话", worker, "finish", peer["id"], "--agent", "claude", "--summary", "项目说明核对完成", "--tests", "未修改业务代码，已有测试在主工作区执行通过")
         handoff = self.session("再次交接保留审计记录", first, "handoff", owner["id"], "--agent", "codex", "--summary", "任务已实现，等待收尾")
-        self.session("完成原会话并释放占用", first, "finish", owner["id"], "--agent", "codex", "--summary", "价格计算整理完成并推送本地演练远端", "--tests", "python -m unittest -q，2 tests passed")
+        self.session("完成原任务后进入待机并释放占用", first, "finish", owner["id"], "--agent", "codex", "--summary", "价格计算整理完成并推送本地演练远端", "--tests", "python -m unittest -q，2 tests passed", "--standby")
         self.check("收尾关闭关联交接", "- status: answered" in (first / handoff["inbox"]).read_text(encoding="utf-8"))
+        waiting = next(s for s in read_board()["sessions"] if s["id"] == owner["id"])
+        self.check("待机保留身份且不占文件", waiting["standby"] and not waiting["occupies"] and waiting["files"] == [])
+        next_owner = self.session("待机后其它会话可登记原文件", first, "start", "--agent", "roo", "--task", "验证文件释放", "--files", "cart.py")
+        refused = self.session("待机不能抢占正在执行的任务", first, "activate", owner["id"], "--agent", "codex",
+                               "--task", "再次核对业务测试", "--files", "cart.py", "test_cart.py", expected=1)
+        self.check("待机激活拒绝来自实际占用", "同一工作区" in refused["error"] or "文件范围重叠" in refused["error"])
+        self.session("结束文件释放核对任务", first, "finish", next_owner["id"], "--agent", "roo",
+                     "--summary", "实际登记与占用拒绝已验证，未修改业务代码", "--tests", "命令退出码与待机范围检查通过")
+        self.session("待机收到新任务重新登记范围", first, "activate", owner["id"], "--agent", "codex",
+                     "--task", "再次核对业务测试", "--files", "cart.py", "test_cart.py")
+        self.run("新任务的包装命令仍执行真实测试", sys.executable, first / ".multi-agent-collab/tools/agents_session.py",
+                 "--root", first, "run", owner["id"], "--agent", "codex", "--", sys.executable, "-m", "unittest", "-q", cwd=first)
+        self.session("新任务完成后明确结束会话", first, "finish", owner["id"], "--agent", "codex",
+                     "--summary", "待机、占用冲突与重新激活闭环完成", "--tests", "python -m unittest -q，2 tests passed")
         data = read_board()
         self.check("看板收尾无悬挂会话或问题", all(s["closed"] for s in data["sessions"]) and not data["inbox_open"] and not data["warnings"])
         self.run("追加平台并同步", sys.executable, installer, "sync", first, "--platforms", "qwen,gemini,cline")

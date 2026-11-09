@@ -32,44 +32,9 @@
 </head>
 <body>
 
-<!-- ── 预加载幕布（aria-hidden：读屏用户不等这场假加载，直接进正文） ── -->
-<div id="preloader" aria-hidden="true">
-  <div class="pre-top mono">
-    <span class="pre-brand">
-      <svg viewBox="0 0 96 96" aria-hidden="true">
-        <line class="bm-link" x1="48" y1="34" x2="48" y2="9"/>
-        <line class="bm-link" x1="60.12" y1="41" x2="81.77" y2="28.5"/>
-        <line class="bm-link" x1="60.12" y1="55" x2="81.77" y2="67.5"/>
-        <line class="bm-link" x1="48" y1="62" x2="48" y2="87"/>
-        <line class="bm-link" x1="35.88" y1="55" x2="14.23" y2="67.5"/>
-        <line class="bm-link" x1="35.88" y1="41" x2="14.23" y2="28.5"/>
-        <path class="bm-core" d="M48 32.5 L61.42 40.25 L61.42 55.75 L48 63.5 L34.58 55.75 L34.58 40.25 Z"/>
-      </svg>
-      MULTI-AGENT-COLLAB
-    </span>
-    <span class="pre-ver">V1.7.0</span>
-  </div>
-
-  <div class="pre-mid">
-    <div class="pre-ring">
-      <svg viewBox="0 0 120 120" aria-hidden="true">
-        <circle class="pr-track" cx="60" cy="60" r="52"/>
-        <circle class="pr-fill" cx="60" cy="60" r="52"/>
-      </svg>
-      <div class="pre-count mono"><span id="preCount">00</span><em>%</em></div>
-    </div>
-    <p class="pre-stage mono" id="preStage">BOOTING · 初始化画布</p>
-    <div class="pre-dots" id="preDots" aria-hidden="true"></div>
-  </div>
-
-  <div class="pre-bottom mono">
-    <span class="pre-hint">SHARED CONTEXT · 示例会话接入中</span>
-    <span class="pre-bar"><i></i></span>
-  </div>
-</div>
-
 <!-- 复制操作的读屏反馈（视觉上用按钮自身的文字变化） -->
 <p class="sr-only" id="srLive" role="status" aria-live="polite"></p>
+<p class="copy-notice" id="copyNotice" role="status" aria-live="polite" hidden></p>
 
 <!-- ── 氛围层 ─────────────────────────────────────────────── -->
 <div class="orb orb-a" aria-hidden="true"></div>
@@ -78,8 +43,6 @@
 <div class="grain" aria-hidden="true"></div>
 <div class="vignette" aria-hidden="true"></div>
 <div id="progress" aria-hidden="true"><i id="progressBar"></i></div>
-<div class="c-dot" aria-hidden="true"></div>
-<div class="c-ring" aria-hidden="true"></div>
 
 <a class="skip mono" href="#content">跳到正文 ↓</a>
 
@@ -105,18 +68,17 @@
     <a href="#sec-3" data-target="3" data-hover><i>03</i>交规</a>
     <a href="#sec-4" data-target="4" data-hover><i>04</i>看板</a>
     <a href="#sec-5" data-target="5" data-hover><i>05</i>拓扑</a>
-    <a href="#sec-6" data-target="6" data-hover><i>06</i>上手</a>
+    <a class="nav-install" href="#sec-6" data-target="6" data-hover><i>06</i>安装</a>
   </nav>
   <div class="head-meta mono">
-    <span class="live-dot" aria-hidden="true"></span>
-    <span>V1.7.0</span>
-    <span id="clock">--:--:--</span>
+    <span data-kit-version>V1.8.0</span>
   </div>
-  <button class="burger" id="burger" aria-label="打开菜单" aria-expanded="false"><span></span><span></span></button>
+  <button class="burger" id="burger" type="button" aria-label="打开菜单" aria-controls="menu" aria-expanded="false"><span></span><span></span></button>
 </header>
 
 <!-- ── 移动菜单 ───────────────────────────────────────────── -->
-<div class="menu" id="menu" role="dialog" aria-modal="true" aria-label="章节导航" aria-hidden="true">
+<div class="menu" id="menu" role="dialog" aria-modal="true" aria-label="章节导航" aria-hidden="true" inert>
+  <button class="menu-close mono" id="menuClose" type="button">关闭菜单 ✕</button>
   <nav class="menu-nav">
     <a href="#sec-0" data-target="0"><i>00</i>首页<span>INDEX</span></a>
     <a href="#sec-1" data-target="1"><i>01</i>它是什么<span>WHAT</span></a>
@@ -127,7 +89,7 @@
     <a href="#sec-6" data-target="6"><i>06</i>按需安装<span>GO</span></a>
   </nav>
   <div style="margin-top:34px;display:flex;gap:14px;flex-wrap:wrap">
-    <a class="btn btn-solid" href="https://github.com/AiFLYF/multi-agent-collab" target="_blank" rel="noopener" data-hover>GITHUB ↗</a>
+    <a class="btn btn-solid" href="demo.html" data-hover>体验协作看板 ↗</a>
     <a class="btn btn-ghost" href="https://github.com/AiFLYF/multi-agent-collab#readme" target="_blank" rel="noopener" data-hover>README ↗</a>
   </div>
 </div>
@@ -146,9 +108,9 @@
 <main id="content" tabindex="-1">
     <!-- ══ 00 / HERO · 汇流 ══════════════════════════════════ -->
     <section class="sec hero" id="sec-0" data-sec="0" data-acc="#46E0FF">
-      <canvas id="heroScene" role="img" aria-label="示例平台的 AI 信号流以各自的方式汇入中央共享黑板，人类指令以琥珀色脉冲抵达"></canvas>
+      <canvas id="heroScene" aria-hidden="true"></canvas>
 
-      <div class="hud hud-tl mono" aria-hidden="true">BOARD <b>.multi-agent-collab/</b> · SYNCED<br>RULEBOOK <b>AGENTS.md</b> v1.7.0</div>
+      <div class="hud hud-tl mono" aria-hidden="true">BOARD <b>.multi-agent-collab/</b> · LOCAL<br>RULEBOOK <b>AGENTS.md</b> v1.8.0</div>
       <div class="hud hud-tr mono" aria-hidden="true">TRACKS <b>06/06</b> ONLINE<br>NO-LOCK · HEARTBEAT 15M</div>
       <div class="hud hud-br mono" aria-hidden="true">CROSS-PLATFORM MULTI-AGENT · MIT<br>HEARTBEAT-NO-LOCK · PR-FIRST</div>
       <div class="console-log" id="heroLog" aria-hidden="true"></div>
@@ -157,32 +119,29 @@
         <div class="hero-copy">
           <p class="eyebrow mono">
             <span class="live-dot" aria-hidden="true"></span>
-            CROSS-PLATFORM MULTI-AGENT · 跨平台多 AI 协作 · v1.7.0 · MIT
+            跨平台多 AI 协作 · <span data-kit-version>V1.8.0</span> · MIT
           </p>
           <h1 class="hero-title" aria-label="多个平台，一个项目。一块黑板，一套规矩。">
             <span class="ht-row"><span class="ht-line" style="--d:.05s">多个平台，一个项目。</span></span>
             <span class="ht-row"><span class="ht-line ht-outline" style="--d:.18s">一块黑板，一套规矩。</span></span>
           </h1>
           <p class="hero-sub">
-            让你使用的 <strong>Codex、Claude Code、Cursor 等 AI 助手</strong> 在不同窗口、不同工具里
-            对着同一份 <code>AGENTS.md</code> 干活：<strong>不互相覆盖、不重复劳动</strong>，
-            谁掉线了一目了然。规则与共享黑板只留本机，看板脚本零依赖，Python 3.8+ 直接跑。
+            给 <strong>Codex、Claude Code、Cursor 等 AI 助手</strong> 一套开工规则和共享记录。
+            在同一个项目里先确认文件占用，再推进任务；你可以在看板查看进度、留言和回复。
+            <strong>本机协作，零第三方依赖，Python 3.8+。</strong>
           </p>
           <div class="hero-cta">
-            <a class="btn btn-solid" href="https://github.com/AiFLYF/multi-agent-collab" target="_blank" rel="noopener" data-hover>
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
-              <span>GITHUB 仓库</span>
-            </a>
-            <a class="btn" href="#sec-6" data-target="6" data-hover>选择平台安装</a>
-            <a class="btn btn-ghost" href="demo.html" data-hover>体验 demo ↗</a>
-            <a class="btn" href="https://github.com/AiFLYF/multi-agent-collab#readme" target="_blank" rel="noopener" data-hover>README 文档</a>
+            <a class="btn btn-solid" href="#sec-6" data-target="6" data-hover>选择平台，开始安装 ↓</a>
+            <a class="btn" href="demo.html" data-hover>体验协作看板 ↗</a>
+            <a class="btn btn-ghost" href="https://github.com/AiFLYF/multi-agent-collab#readme" target="_blank" rel="noopener" data-hover>使用文档 ↗</a>
           </div>
+          <div class="hero-helper"><span>下载一次，多个项目复用</span><span class="release-note">正式版本 · 1.8.0</span><button id="motionToggle" class="quiet-button mono" type="button" aria-pressed="false">开启背景动效</button></div>
         </div>
 
         <div class="board-card" id="boardCard">
           <div class="bc-head mono">
             <span class="bc-title"><b>.multi-agent-collab/</b> 共享黑板</span>
-            <span class="bc-live"><i class="live-dot" aria-hidden="true"></i>LIVE</span>
+            <span class="bc-live">示例数据</span>
           </div>
           <ul class="bc-rows mono">
             <li class="bc-row" data-slot="sessions">
@@ -200,17 +159,17 @@
           </ul>
           <div class="bc-foot mono">
             <span class="bc-conv">MULTI-PLATFORM ▸ ONE BOARD</span>
-            <span class="bc-hint">点击画面 = 下发一条人类指令</span>
+            <a class="bc-hint" href="demo.html">模拟发送与回复 →</a>
           </div>
         </div>
       </div>
 
       <div class="wrap strip mono" aria-hidden="true">
-        <span><b>6</b> 平台接入 · <b>4</b> 个零配置</span>
+        <span><b data-platform-count>15</b> 个平台按需接入</span>
         <span><b>0</b> 第三方依赖</span>
-        <span><b>48</b> 项看板断言</span>
-        <span><b>34</b> 项自测用例</span>
-        <span><b>29</b> 条排障手册</span>
+        <span><b>15</b> 分钟内更新心跳</span>
+        <span><b>5</b> 秒刷新网页看板</span>
+        <span>规则 · 会话 · 消息 · 记录</span>
         <span><i>●</i> PYTHON 3.8+ · WIN / MACOS / LINUX</span>
       </div>
     </section>
@@ -225,15 +184,15 @@
         </h2>
 
         <p class="lede rv" style="--d:.2s">
-          它不是又一个 AI 编排器 —— 不负责启动 AI、不给每个 AI 隔离工作区（那是 Claude Squad、Conductor 这类工具的活）。
-          它管<strong>另一半</strong>：让已经在同一个项目里干活的多个 AI 会话互相可见、守同一套规矩、听你指挥。
+          分别启动你正在使用的 AI 工具，再把它们接入同一个项目。
+          通过<strong>规则入口、会话登记和本地消息</strong>，每个会话知道谁在做什么、哪些文件已占用、接下来该读什么。
         </p>
 
         <div class="cards-3">
           <article class="pcard rv" style="--d:0s" data-tilt>
             <span class="pcard-i mono">PILLAR 01</span>
             <h3>一份规则总章</h3>
-            <p><code>AGENTS.md</code> / <code>CLAUDE.md</code> 是每个 AI 开工前的必读：先协调再干活、分支怎么切、测试怎么算过、人类指令优先级最高。各个平台按需安装入口，规则只写一遍。</p>
+            <p>保留项目原有 <code>AGENTS.md</code> / <code>CLAUDE.md</code>，用简短入口连接独立的 <code>.multi-agent-collab/RULES.md</code>。平台按需安装，开工、测试和人类指令遵守同一套协作规则。</p>
           </article>
           <article class="pcard rv" style="--d:.08s" data-tilt>
             <span class="pcard-i mono">PILLAR 02</span>
@@ -269,7 +228,7 @@
           <div class="cmp-row">
             <span class="cmp-k mono">想喊停</span>
             <span class="cmp-a">「先别碰那个文件」没有任何途径告诉它们</span>
-            <span class="cmp-b">人类指令走 inbox，优先级最高，看板实时显示回复闭环</span>
+            <span class="cmp-b">人类指令写入 inbox；工具提示后读取并处理，看板显示计划、结果与事项状态</span>
           </div>
         </div>
       </div>
@@ -318,11 +277,11 @@
         </p>
 
         <div class="stat-grid">
-          <div class="stat rv" style="--d:0s"><b><span data-count="15">0</span><em>+</em></b><p class="stat-cap">个 AI 协作会话的事故复盘</p></div>
-          <div class="stat rv" style="--d:.06s"><b><span data-count="29">0</span></b><p class="stat-cap">条 TROUBLESHOOTING 排障手册</p></div>
+          <div class="stat rv" style="--d:0s"><b><span data-platform-count>15</span></b><p class="stat-cap">个平台可按需安装入口</p></div>
+          <div class="stat rv" style="--d:.06s"><b>3</b><p class="stat-cap">类共享记录：会话、消息、日志</p></div>
           <div class="stat rv" style="--d:.12s"><b><span data-count="48">0</span></b><p class="stat-cap">项看板 selfcheck 内置断言</p></div>
-          <div class="stat rv" style="--d:.18s"><b><span data-count="89">0</span></b><p class="stat-cap">项回归用例（含策略、接管与平台适配）</p></div>
-          <div class="stat rv" style="--d:.24s"><b><span data-count="3">0</span><em>×</em><span data-count="4">0</span></b><p class="stat-cap">操作系统 × Python 版本的 CI 矩阵</p></div>
+          <div class="stat rv" style="--d:.18s"><b>15<em>min</em></b><p class="stat-cap">阶段间隙检查，并及时更新心跳</p></div>
+          <div class="stat rv" style="--d:.24s"><b>5<em>sec</em></b><p class="stat-cap">网页看板自动刷新间隔</p></div>
           <div class="stat rv" style="--d:.3s"><b><span data-count="0">0</span></b><p class="stat-cap">第三方依赖 · Python 3.8+ 标准库</p></div>
         </div>
 
@@ -353,7 +312,7 @@
           <div class="inc-row">
             <span class="inc-sym">想中途喊一句「先别碰那个文件」，没有任何途径告诉它们</span>
             <span class="inc-arrow">→</span>
-            <span class="inc-rule"><b>人类指令通道：</b>从看板网页直接下发，落盘成标准 inbox 留言条，手头任务都要为它让路</span>
+            <span class="inc-rule"><b>人类指令通道：</b>看板将内容写入 inbox，业务工具返回短提示；读取后先处理控制要求，其它事项回执计划、再回复结果</span>
           </div>
           <div class="inc-row">
             <span class="inc-sym">看板显示「无活跃会话」，以为没人，上手就是覆盖别人的改动</span>
@@ -402,11 +361,11 @@
             <span class="hb-cell"><i class="hb-dot"></i>5 分钟前</span>
             <span class="hb-cell"><i class="hb-dot"></i>11 分钟前</span>
             <span class="hb-cell"><i class="hb-dot"></i>14 分钟前</span>
-            <span class="hb-cell dead"><i class="hb-dot dead"></i>≥ 15 分钟</span>
+            <span class="hb-cell dead"><i class="hb-dot dead"></i>&gt; 15 分钟</span>
           </div>
           <p class="hb-note">
-            <b>心跳长这样：</b>绿色脉冲 = 会话还活着；灰点静止 = 已失联，别人可以在 inbox 声明接管。
-            长任务前写明预计返回时间，并在阶段间隙更新心跳；失活提醒不会自动让出文件。
+            <b>最近更新一眼可见：</b>青色点表示心跳正常，红色点表示需要核查。
+            长任务前写明预计返回时间，并在阶段间隙更新心跳；失活和 blocked 都保留占用，接管仍需检查、等待与用户确认。
           </p>
         </div>
       </div>
@@ -425,9 +384,17 @@
           <li class="rv" style="--d:0s"><span class="bl-i">01</span><span><b>每 5 秒自动刷新。</b>每个 AI 一张卡片：哪个平台、在哪个分支、做什么任务、几分钟前还有心跳（绿 = 正常，红 = 失联）。</span></li>
           <li class="rv" style="--d:.06s"><span class="bl-i">02</span><span><b>问题与交接一眼可见。</b>未答复的 inbox 留言、前任留下的「下一步 / 阻塞点」，不用去翻文件。</span></li>
           <li class="rv" style="--d:.12s"><span class="bl-i">03</span><span><b>worktree 告警。</b>有 AI 在没登记过的目录里动了手脚，红色告警直接拍在页面上。</span></li>
-          <li class="rv" style="--d:.18s"><span class="bl-i">04</span><span><b>直接对 AI 下指令。</b>在卡片上输入「先停一下，别碰登录模块」——AI 在下个阶段间隙读到并执行，回复实时回到网页，可开桌面通知。<b>人类指令优先级最高。</b></span></li>
+          <li class="rv" style="--d:.18s"><span class="bl-i">04</span><span><b>留言、计划、结果分别可见。</b>从看板发送到 inbox；会话、检查、状态或更新工具顺带提示相关新消息。AI 读取后回复计划，处理完再回复结果并更新事项状态。</span></li>
           <li class="rv" style="--d:.24s"><span class="bl-i">05</span><span><b>三档安全。</b>默认只听本机；局域网可以只读大屏，或设密码后可指挥——「对外可写又无密码」的组合会被拒绝启动。</span></li>
         </ul>
+
+        <div class="message-flow" aria-label="从消息发送到结果回复的四个步骤">
+          <div><span class="mono">01 / 发送</span><h3>写入本机 inbox</h3><p>选择会话或广播，普通留言与暂停、取消、避让使用各自的类型。</p></div>
+          <div><span class="mono">02 / 提示</span><h3>工具返回短通知</h3><p>调用套件业务工具时发现相关新消息，再按提示读取正文。</p></div>
+          <div><span class="mono">03 / 处理</span><h3>先阅读，再回复计划</h3><p>标读仅表示读过；普通事项仍保持 open，控制要求立即处理。</p></div>
+          <div><span class="mono">04 / 结果</span><h3>原消息回复并收尾</h3><p>完成普通事项后写结果并 answered；控制只有人类明确解除才可恢复。</p></div>
+        </div>
+        <p class="feature-note">消息在下次套件工具调用或主动检查时送达。长命令中途和空闲时需按协作流程检查；本套件不会自动启动 AI，也不会把命令注入任意终端。<a href="demo.html">在演示中体验完整过程 →</a></p>
 
         <figure class="board-figure rv" style="--d:.16s">
           <div class="bf-bar"><i></i><i></i><i></i><span class="mono">127.0.0.1:8731 · python .multi-agent-collab/tools/agents_status.py --web</span></div>
@@ -446,9 +413,11 @@ python .multi-agent-collab/tools/agents_status.py --web
 # 单文件快照（不需要服务）
 python .multi-agent-collab/tools/agents_status.py --html
 
-# AI 开工协调用的一行摘要
-python .multi-agent-collab/tools/agents_status.py --brief
-# 示例输出：OK 看板无告警，可直接开工</code></pre>
+# AI 开工：查看策略、占用、定向消息与有限日志
+python .multi-agent-collab/tools/agents_status.py --context --agent codex
+
+# 只查看一行看板状态
+python .multi-agent-collab/tools/agents_status.py --brief</code></pre>
         </div>
       </div>
     </section>
@@ -472,12 +441,24 @@ python .multi-agent-collab/tools/agents_status.py --brief
           <div class="topo-view">
             <canvas id="topoScene" role="img" aria-label="协作拓扑图：示例平台的会话节点汇入中央的共享黑板 .multi-agent-collab/，人类节点以金色线路连入"></canvas>
             <div class="topo-labels" id="topoLabels" aria-hidden="true"></div>
+            <div class="topo-placeholder" id="topoPlaceholder">
+              <div class="topo-static" aria-label="AI 工具通过规则入口连接共享记录，人类通过看板写入消息">
+                <div class="topo-tools"><span>Codex</span><span>Claude Code</span><span>Cursor</span><span>更多平台</span></div>
+                <span class="topo-connector" aria-hidden="true">↓</span>
+                <div class="topo-center"><img src="assets/logo/mark.svg" width="34" height="34" alt=""><strong>共享规则与本机记录</strong><code>.multi-agent-collab/</code></div>
+                <span class="topo-connector" aria-hidden="true">↑</span>
+                <span class="topo-human">你 · 看板与 inbox</span>
+              </div>
+              <button class="quiet-button mono" id="topoLoad" type="button">加载交互拓扑 ↗</button>
+              <p id="topoLoadStatus" class="subtle-note" role="status"></p>
+            </div>
           </div>
           <div class="topo-cap mono">
             <span class="topo-legend">
               <i>平台会话</i><i class="lg-bb">共享黑板 .multi-agent-collab/</i><i class="lg-am">你 · 人类指令</i>
             </span>
-            <span>拖拽旋转 · 数据包 = 会话读规则 / 写心跳 / 读指令</span>
+            <span>示意图 · 加载后可拖拽旋转 · 本地资源</span>
+            <button class="quiet-button mono" id="topoStatic" type="button" hidden>切回静态图</button>
           </div>
         </div>
       </div>
@@ -497,39 +478,45 @@ python .multi-agent-collab/tools/agents_status.py --brief
           套件放在用户主目录 <code>~/multi-agent-collab</code>，多个项目共用同一个安装器。
           选择当前项目使用的平台，查看文件，再复制对应提示词。
         </p>
+        <ol class="install-steps" aria-label="安装步骤"><li><span>1</span>选择平台与分支流程</li><li><span>2</span>复制提示词或终端命令</li><li><span>3</span>体检，并在新对话中验证</li></ol>
+        <p class="feature-note">当前页面对应 1.8.0，安装命令从仓库 main 获取源码。已有项目可从更新页签更新本地套件源，新提示词需新开对话或明确重读。</p>
 
         <div class="install-config rv" style="--d:.18s">
           <div class="install-config-head">
             <div><p class="install-kicker mono">YOUR TOOLS / YOUR PROJECT</p><h3>这个项目，你用哪些 AI？</h3></div>
             <button class="install-clear mono" id="platform-clear" type="button">清空平台选择</button>
           </div>
+          <div class="platform-presets" aria-label="常用平台组合"><span>快速选择</span><button type="button" data-platform-preset="codex,claude">Codex + Claude Code</button><button type="button" data-platform-preset="cursor,copilot">Cursor + Copilot</button><button type="button" data-platform-preset="codex">仅 Codex</button></div>
           <label class="platform-search-label" for="platform-search">查找平台<span class="mono">支持名称或命令名</span></label>
-          <input id="platform-search" class="platform-search" type="search" placeholder="例如 Codex、Gemini、Cline" autocomplete="off">
-          <p id="platform-empty" class="install-summary" hidden>没有匹配的平台。清空搜索可查看全部。</p>
+          <div class="platform-search-row"><input id="platform-search" class="platform-search" type="search" placeholder="例如 Codex、Gemini、Cline" autocomplete="off" aria-describedby="platform-search-status"><button id="platform-search-clear" class="quiet-button mono" type="button" aria-label="清空平台搜索" disabled>清空搜索</button></div>
+          <p id="platform-search-status" class="platform-search-status" role="status" aria-live="polite">显示所有支持的平台 · 可多选</p>
+          <p id="platform-empty" class="install-empty" hidden>没有匹配的平台。清空搜索后可继续选择。</p>
           <fieldset id="platform-picker" class="platform-picker">
             <legend class="sr-only">选择当前项目使用的平台，可多选</legend>
           </fieldset>
+          <div id="platform-selected" class="platform-selected" aria-label="已选平台"></div>
           <label class="platform-search-label" for="install-workflow">项目分支流程<span>与项目已有约定保持一致</span></label>
           <select id="install-workflow" class="platform-search">
             <option value="">沿用已配置策略；初装默认 Git Flow</option>
             <option value="git-flow">Git Flow · develop 基线</option>
             <option value="github-flow">GitHub Flow · main 基线</option>
           </select>
-          <p class="install-summary">流程不明确时，提示词会先确认。自定义基线和前缀可通过安装器设置。</p>
+          <p class="install-summary" id="install-workflow-note">先核对项目现有策略。首次安装流程不明确时，提示词会先确认；自定义基线和前缀可通过安装器设置。</p>
           <noscript><p>平台选择器需要 JavaScript；下方通用提示词会让 AI 先确认你使用的平台。</p></noscript>
           <p id="install-summary" class="install-summary" role="status" aria-live="polite">未选平台时，提示词会让 AI 先确认你正在使用的平台。</p>
           <details class="install-files">
-            <summary>查看将安装的协作文件 <span id="install-file-count" class="mono"></span></summary>
+            <summary>查看文件清单与入口变更 <span id="install-file-count" class="mono"></span></summary>
             <ul id="install-file-list" class="mono"></ul>
-            <p>另维护 Git 本地忽略。后续新增平台会保留已经安装的入口与协作记录。</p>
+            <p>这是首次安装的预览，已有安装以 --dry-run 的实际清单为准。共享入口保留原文；.gitignore 维护套件标记区，平台入口精确路径写入 .git/info/exclude。后续追加平台保留记录。</p>
           </details>
         </div>
 
         <div class="tabs rv" style="--d:.2s">
           <div class="tab-bar mono" role="tablist" aria-label="安装方式">
             <button class="tab is-on" id="tab-agent" role="tab" aria-selected="true" aria-controls="panel-agent" data-tab="agent" data-hover><i>01</i>复制一段话给 AI</button>
-            <button class="tab" id="tab-manual" role="tab" aria-selected="false" aria-controls="panel-manual" data-tab="manual" data-hover><i>02</i>自己跑一条命令</button>
+            <button class="tab" id="tab-manual" role="tab" aria-selected="false" aria-controls="panel-manual" data-tab="manual" data-hover><i>02</i>终端安装</button>
             <button class="tab" id="tab-verify" role="tab" aria-selected="false" aria-controls="panel-verify" data-tab="verify" data-hover><i>03</i>装完验证</button>
+            <button class="tab" id="tab-update" role="tab" aria-selected="false" aria-controls="panel-update" data-tab="update" data-hover><i>04</i>已有项目更新</button>
           </div>
 
           <div class="tabpanel is-on" id="panel-agent" data-panel="agent" role="tabpanel" aria-labelledby="tab-agent">
@@ -547,7 +534,7 @@ python .multi-agent-collab/tools/agents_status.py --brief
 5. 新安装把套件规则、工具、记录放入 .multi-agent-collab/，默认在项目 .gitignore 的标记区忽略该目录；平台入口按精确路径写入 .git/info/exclude。已有 AGENTS.md 等共享入口保留原文，只维护小段标记。已跟踪入口的差异正常显示，不取消跟踪，不隐藏索引改动。来源不明的独立目录、损坏标记或被修改的套件文件先报告并保留现场。
 6. 结合项目真实配置填写 .multi-agent-collab/RULES.md 第 6 节缺少的测试/构建命令，项目既有测试要求和已确认策略继续有效。保留已有规则、会话、日志和备份。旧版安装沿用 .agents/ 路径，不自动搬迁；新增平台使用 sync。
 7. 执行 python "&lt;套件目录&gt;/install.py" doctor "&lt;TARGET&gt;"，并核对 git status --short；可用 clients "&lt;TARGET&gt;" --versions 检查 CLI 可用性，不启动模型。汇报套件复用路径、已选平台、项目分支策略、生成文件和体检结果；解释 WARN，版本查询不代表新对话已加载规则。
-8. 告诉我新开对话验证：让 agent 读取 .multi-agent-collab/START_HERE.md，报告当前分支、看板和 inbox 的实际结果。之后增加平台用 sync "&lt;TARGET&gt;" --platforms &lt;新增名称&gt;，无需重复 clone；旧对话需要主动重新读取规则。
+8. 告诉我新开对话验证：让 agent 执行 .multi-agent-collab/START_HERE.md 的开工、执行中与最终答复前清单，报告实际分支、看板和 inbox。普通业务工具带自己的平台和会话 ID 记录活动；完成默认 finish --standby 释放范围等待新任务，未完成 handoff 保留占用，并核验命令成功后答复。之后增加平台用 sync "&lt;TARGET&gt;" --platforms &lt;新增名称&gt;；旧核心先完整 update 再 sync，能力不足不写新版入口，无需重复 clone；旧对话需主动重读变化部分。
 
 执行安装范围内可恢复的修复即可；遇到需要改变现有项目规则或 Git 跟踪状态的冲突，再说明具体情况让我决定。</code></pre>
             </div>
@@ -559,7 +546,7 @@ python .multi-agent-collab/tools/agents_status.py --brief
 
           <div class="tabpanel" id="panel-manual" data-panel="manual" role="tabpanel" aria-labelledby="tab-manual">
             <div class="code">
-              <div class="code-bar"><i></i><i></i><i></i><span class="fname">terminal</span><button class="copy" data-copy="cmd-manual" data-hover>复制</button></div>
+              <div class="code-bar"><i></i><i></i><i></i><span class="fname">terminal · 跟随上方选择</span><button class="copy" data-copy="cmd-manual" data-hover>复制</button></div>
 <pre><code id="cmd-manual"># 仅第一次下载时运行；已经存在则核对后复用
 git clone https://github.com/AiFLYF/multi-agent-collab "$HOME/multi-agent-collab"
 
@@ -571,8 +558,8 @@ python "$HOME/multi-agent-collab/install.py" doctor .
 python "$HOME/multi-agent-collab/install.py" sync .</code></pre>
             </div>
             <ul class="tabpanel-notes">
-              <li>命令兼容 Bash 与 PowerShell；请在目标项目目录执行。clone 只在首次下载时运行</li>
-              <li>后续新增平台用 sync --platforms 名称；升级核心规则用 install，都会沿用已保存的选择</li>
+              <li>命令兼容 Bash 与 PowerShell；<b>分步执行，前一步成功后再继续</b>。请在目标项目目录运行安装，套件 clone 只做一次</li>
+              <li>先预览文件与策略，再安装并 doctor。失败时按实际输出处理；页面复制成功仅说明文本进入剪贴板</li>
             </ul>
           </div>
 
@@ -581,10 +568,24 @@ python "$HOME/multi-agent-collab/install.py" sync .</code></pre>
               <p class="ac-title mono">安装后，确认真实生效</p>
               <ol>
                 <li><b>①</b> 打开项目里的 <code>.multi-agent-collab/RULES.md</code> 第 6 节，把示例换成你项目真实的测试 / 构建命令（定制区，升级自动保留）</li>
-                <li><b>②</b> 执行安装器 <code>doctor</code>，再运行 <code>python .multi-agent-collab/tools/agents_status.py --brief</code>，检查入口与忽略规则</li>
+                <li><b>②</b> 执行安装器 <code>doctor</code>，解释 WARN；用下方 context 查看策略、文件占用和定向消息</li>
                 <li><b>③</b> <b>新开一个 AI 对话</b>，确认它实际读取 <code>.multi-agent-collab/START_HERE.md</code>，并报告分支、看板和 inbox 的当前结果</li>
               </ol>
             </div>
+            <div class="code"><div class="code-bar"><span class="fname">新对话开工检查 · 示例平台 Codex</span><button class="copy" data-copy="verify-cmd">复制</button></div><pre><code id="verify-cmd">git status --short --branch
+python .multi-agent-collab/tools/agents_status.py --context --agent codex</code></pre></div>
+          </div>
+
+          <div class="tabpanel" id="panel-update" data-panel="update" role="tabpanel" aria-labelledby="tab-update">
+            <div class="checks"><p class="ac-title mono">沿用已选平台、策略与定制</p><ol><li>先核对本地套件来源与工作区；有修改时保留现场。确认干净并配置上游后，才更新套件源码。</li><li>在目标项目检查内容差异，预览后执行更新，再 doctor。<b>同版本也按内容检查</b>。</li><li>规则更新后让旧对话主动重读变化部分；长驻看板需重启。新增平台用 <code>sync --platforms 名称</code>。</li></ol></div>
+            <div class="code"><div class="code-bar"><span class="fname">目标项目 · 每一步核对输出后继续</span><button class="copy" data-copy="update-cmd">复制</button></div><pre><code id="update-cmd"># 检查：退出 0 表示最新，1 表示可更新，2 表示错误
+python .multi-agent-collab/tools/agents_update.py --check --json
+
+# 只预览，再决定是否执行
+python .multi-agent-collab/tools/agents_update.py --dry-run --diff
+python .multi-agent-collab/tools/agents_update.py
+python "$HOME/multi-agent-collab/install.py" doctor .</code></pre></div>
+            <ul class="tabpanel-notes"><li>更新入口从安装记录找到本地套件源；路径变动时用 --source &lt;套件目录&gt;</li><li>旧版没有更新入口时，从新版套件运行 <code>python "&lt;套件目录&gt;/install.py" update .</code>。旧 .agents/ 布局沿用原路径</li></ul>
           </div>
         </div>
 
@@ -593,12 +594,15 @@ python "$HOME/multi-agent-collab/install.py" sync .</code></pre>
           <table class="cmd-table mono">
             <thead><tr><th style="width:46%">命令</th><th>作用</th></tr></thead>
             <tbody>
-              <tr><td class="cmd" data-copy="python .multi-agent-collab/tools/agents_status.py --brief">python .multi-agent-collab/tools/agents_status.py --brief</td><td>一行摘要：无事只回 OK，AI 开工首选</td></tr>
+              <tr><td class="cmd" data-copy="python .multi-agent-collab/tools/agents_status.py --context --agent codex">python .multi-agent-collab/tools/agents_status.py --context --agent codex</td><td>开工：策略、占用、定向消息与有限日志；把 codex 换成当前平台</td></tr>
+              <tr><td class="cmd" data-copy="python .multi-agent-collab/tools/agents_status.py --brief">python .multi-agent-collab/tools/agents_status.py --brief</td><td>只查看一行看板状态</td></tr>
               <tr><td class="cmd" data-copy="python .multi-agent-collab/tools/agents_status.py">python .multi-agent-collab/tools/agents_status.py</td><td>完整终端看板</td></tr>
               <tr><td class="cmd" data-copy="python .multi-agent-collab/tools/agents_status.py --web">python .multi-agent-collab/tools/agents_status.py --web</td><td>图形化看板，可直接对 AI 下指令</td></tr>
               <tr><td class="cmd" data-copy="python .multi-agent-collab/tools/agents_status.py --html">python .multi-agent-collab/tools/agents_status.py --html</td><td>导出零外链单文件 HTML 快照</td></tr>
               <tr><td class="cmd" data-copy="python .multi-agent-collab/tools/agents_status.py --json">python .multi-agent-collab/tools/agents_status.py --json</td><td>结构化输出，给脚本用</td></tr>
               <tr><td class="cmd" data-copy="python .multi-agent-collab/tools/agents_status.py --selfcheck">python .multi-agent-collab/tools/agents_status.py --selfcheck</td><td>看板内置 48 项断言自检</td></tr>
+              <tr><td class="cmd" data-copy="python .multi-agent-collab/tools/agents_messages.py list --agent codex">python .multi-agent-collab/tools/agents_messages.py list --agent codex</td><td>只读相关消息元数据；正文按通知给出的 read 参数读取</td></tr>
+              <tr><td class="cmd" data-copy="python .multi-agent-collab/tools/agents_update.py --check --json">python .multi-agent-collab/tools/agents_update.py --check --json</td><td>检查本地源更新，保留平台、策略和定制</td></tr>
             </tbody>
           </table>
         </div>
@@ -608,7 +612,7 @@ python "$HOME/multi-agent-collab/install.py" sync .</code></pre>
             <h4>✓ 适合</h4>
             <ul>
               <li>同一台电脑、同一个 git 工作区</li>
-              <li>多个 AI 会话（含真人）同时干活</li>
+              <li>多个 AI 会话分工，由同一任务协调并声明范围</li>
               <li>不想搭任何服务器、任何账号</li>
               <li>和 Claude Squad / Conductor 这类编排器叠加使用</li>
             </ul>
@@ -617,9 +621,9 @@ python "$HOME/multi-agent-collab/install.py" sync .</code></pre>
             <h4>? 想清楚再用</h4>
             <ul>
               <li>跨电脑协作（需要真正的远程同步，本工具刻意不做）</li>
-              <li>AI 之间要毫秒级实时通信（这里最快是「下次工具调用时读到留言」）</li>
+              <li>需要即时唤醒 AI（消息在套件工具调用或主动读取时送达）</li>
               <li>AI 完全不遵守 AGENTS.md（退回最朴素规矩：同一时间一个 AI 动一个文件）</li>
-              <li>想把 AGENTS.md 提交进仓库全团队共享（本套件取舍：规则本机私有、各自定制）</li>
+              <li>跨工作区同时编辑相同文件（必须先核对占用、规则与实际改动）</li>
             </ul>
           </div>
         </div>
@@ -634,7 +638,7 @@ python "$HOME/multi-agent-collab/install.py" sync .</code></pre>
         </div>
 
         <footer class="site-foot mono">
-          <span>© 2026 AiFLYF — MIT LICENSE · V1.7.0</span>
+          <span>© 2026 AiFLYF · MIT LICENSE · <span data-kit-version>V1.8.0</span></span>
           <span class="foot-mid">规则沉淀自 ego-link-esp32 · 15+ AI 协作会话复盘</span>
           <button class="to-top" data-target="0" data-hover><i>↑</i><span>TOP</span></button>
         </footer>
@@ -655,12 +659,9 @@ python "$HOME/multi-agent-collab/install.py" sync .</code></pre>
     <img src="assets/board.png" alt="multi-agent-collab 网页看板全图：活跃会话卡片、指令与回复、worktree 面板（演示数据）">
   </div>
 
-  <!-- ui / hero 走首屏关键路径；three.js 与拓扑图由 ui.js 按需注入
-       （712KB 的 WebGL 库不该挡在首屏，否则主线程被占住，
-        连加载幕布的计数都跑不动） -->
+  <!-- 页面与选择器立即可用；背景动效和交互拓扑由用户按需开启。 -->
   <script src="assets/js/install-data.js" defer></script>
   <script src="assets/js/ui.js" defer></script>
   <script src="assets/js/install.js" defer></script>
-  <script src="assets/js/hero.js" defer></script>
 </body>
 </html>

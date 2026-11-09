@@ -6,8 +6,8 @@ alwaysApply: true
 
 # {{PROJECT_NAME}} · Continue 协作入口
 
-每次新对话先读取根 `AGENTS.md` 与 `.multi-agent-collab/START_HERE.md`。
-Chat / Plan 等只读阶段先检查协作状态；可写 Agent 模式执行编码前登记自己的会话和文件范围。
-阶段间隙运行 `agents_session.py heartbeat` 并检查 inbox，完成后用 finish 记录实际测试结果。
+执行 `.multi-agent-collab/START_HERE.md`，静态规则各读一次，动态状态每次开工和恢复都重查。
+Chat / Plan 先只读检查，可写 Agent 模式登记实际范围；同任务沿用 ID，阶段间隙检查 inbox。
+执行 START_HERE 的执行中与最终答复前清单；调用带自己的平台/ID，完成默认 finish --standby，未完成 handoff，核验成功再答复。
 
-协作总章：`.multi-agent-collab/RULES.md`；项目原有规则与已确认策略继续有效。
+总章：`.multi-agent-collab/RULES.md`；项目原有规则与已确认策略继续有效。
