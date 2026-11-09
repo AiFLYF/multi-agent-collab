@@ -4,7 +4,7 @@
 `.multi-agent-collab/install.json`（旧布局为 `.agents/install.json`），`doctor` 据此提示升级。
 版本号遵循语义化版本（major.minor.patch）。
 
-## 1.8.0 — 待发布
+## 1.8.0 — 2026-11-09
 
 - 权限回归比较写入前后的实际系统模式位，兼容 Windows 3.13 新增 fchmod 的只读属性语义；复制失败时继续严格核对内容、模式位和 mtime 不变。
 

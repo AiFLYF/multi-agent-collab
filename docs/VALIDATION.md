@@ -1,5 +1,15 @@
 # 可行性验证与使用边界
 
+## 1.8.0 发布验证记录（2026-11-09）
+
+功能提交 `d5983e4` 已经由 [PR #8](https://github.com/AiFLYF/multi-agent-collab/pull/8) 合入 `develop`，开发基线为 `d457723`，两者文件树相同。
+功能分支、PR 与开发基线的三系统四 Python 版本 CI 均全部成功。
+`release/1.8.0` 从该开发基线创建，仅更新 README、CHANGELOG、站点版本说明和本验证记录；协作工具、安装器及工作流与已验证版本一致。
+
+默认下载取 main，线上页面由 main 的 Pages 工作流发布，均须通过 release PR 和对应测试门控；GitHub 上仅显示功能分支 recent pushes 不能表示默认版本已更新。
+已安装项目还需执行更新命令，既有 AI 对话需要重读入口或新开对话；仅更新仓库不会自动刷新它们。
+以下各节是此前未发布候选的历史验收和失败修复记录，按当时快照保留；实际发布提交、标签和部署结果以 GitHub 的对应记录为准。
+
 ## Windows 3.13 权限语义补验（2026-11-09）
 
 第二轮 [CI 42620407786](https://github.com/AiFLYF/multi-agent-collab/actions/runs/42620407786) 的 11 个组合通过，仅 Windows 3.13 的一项 fallback 权限测试失败；该版本在 Windows 新增 fchmod，使原先跳过的测试执行，但 Windows 不能表示测试写死的 POSIX 0640。
