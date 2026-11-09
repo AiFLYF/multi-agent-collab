@@ -1,5 +1,16 @@
 # 可行性验证与使用边界
 
+## 首轮远端 CI 与环境契约修复（2026-11-09）
+
+功能分支首个推送提交 `cdfe7ef` 的 [CI 42614634829](https://github.com/AiFLYF/multi-agent-collab/actions/runs/42614634829) 中，Ubuntu 3.8/3.10/3.12/3.13 全部通过，Windows 与 macOS 八组合失败，失败日志保留。
+失败集中在未规范化的系统临时目录别名：macOS `/var` 与 `/private/var`、Windows `RUNNER~1` 与实际用户目录使直接调用库的测试夹具与 CLI 真实路径不同；Windows 宿主 CP1252 标准流也会先抛中文编码错误。
+
+产品代码不因这些失败改变，两个测试夹具采用真实根路径，新增 symlink/junction 系统临时目录下执行原竞态案例的回归，外部内容、mtime 及实际重定向断言保留并加强。CI 仅明确 Python 标准流 UTF-8。
+Linux 真实系统临时目录别名修前 33 项出现 11 失败、1 错误，修后 34/34 通过；Windows 的新 40 项受影响验证为 39 通过、1 POSIX 跳过，退出 0，包含 6 项工作流回归及真实非 UTF-8 宿主 Unicode 输出烟测。
+原完整 416 项验收对应前一冻结代码；当前产品源码与其一致，新测试、CI 配置与文档另行验证，不把定向测试相加成一次全量。
+
+本机新证据在私有 `risk-audit/`：`mac-alias-before-fix.log`、`mac-alias-after-fix.log`、`windows312-ci-fix-affected.json`、同名日志与首轮远端失败日志。最终矩阵结果查看最新功能分支对应 CI，版本仍待发布。
+
 ## 外部审查、契约修复与提交候选验收（2026-11-09）
 
 本轮验证提交前的 117 文件冻结候选，基于 `develop` 的 `2e8ba9e29443ff2c80e66ec465f338ac3723b701`，功能分支为 `feature/session-activity-standby`，版本仍为 **1.8.0，待发布**。

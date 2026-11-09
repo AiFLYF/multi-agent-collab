@@ -1,6 +1,9 @@
 """Publishing must follow successful tests of the same main commit."""
 import ast
+import os
 import re
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -104,6 +107,21 @@ class PublishingWorkflowTests(unittest.TestCase):
         self.assertNotIn("id-token: write", self.verify)
         self.assertIn("pages: write", self.deploy)
         self.assertIn("id-token: write", self.deploy)
+
+    def test_ci_python_stdio_handles_unicode_on_an_ansi_host(self):
+        match = re.search(r"(?m)^env:\n((?:  [^\n]+\n)+)", self.tests)
+        self.assertIsNotNone(match)
+        setting = re.search(r"(?m)^  PYTHONIOENCODING:[ \t]+([^\n]+)$", match.group(1))
+        self.assertIsNotNone(setting)
+        encoding = setting.group(1).strip().strip("\"'")
+        env = dict(os.environ, PYTHONUTF8="0", PYTHONIOENCODING="cp1252")
+        env["PYTHONIOENCODING"] = encoding
+        command = "import sys; sys.stdout.write('\\u534f\\u4f5c\\u6d4b\\u8bd5\\n')"
+        result = subprocess.run([sys.executable, "-c", command], env=env,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.decode("utf-8", errors="strict").splitlines(), ["协作测试"])
+        self.assertNotIn(b"Traceback", result.stderr)
 
 
 if __name__ == "__main__":

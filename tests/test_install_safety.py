@@ -22,7 +22,9 @@ from agents_layout import state_dir
 
 class TestInstallSafety(unittest.TestCase):
     def setUp(self):
-        self.parent = Path(tempfile.mkdtemp(prefix="mac-install-safety-"))
+        # macOS system temp paths may traverse /var -> /private/var. Internal
+        # installer APIs and race hooks use the canonical project root.
+        self.parent = Path(tempfile.mkdtemp(prefix="mac-install-safety-")).resolve()
         self.root = self.parent / "project"
         self.root.mkdir()
         self.assertEqual(run("git", "init", "-q", cwd=self.root).returncode, 0)
@@ -35,6 +37,10 @@ class TestInstallSafety(unittest.TestCase):
         root = root or self.root
         return {path.relative_to(root).as_posix(): path.read_bytes() for path in root.rglob("*")
                 if path.is_file() and (include_git or ".git" not in path.relative_to(root).parts)}
+
+    def snapshot_with_mtimes(self, root):
+        return {path.relative_to(root).as_posix(): (path.read_bytes(), path.stat().st_mtime_ns)
+                for path in root.rglob("*") if path.is_file()}
 
     def install_project(self, root=None, platforms="codex"):
         result = install(root or self.root, "--platforms", platforms)
@@ -65,6 +71,28 @@ class TestInstallSafety(unittest.TestCase):
                 link.symlink_to(source, target_is_directory=True)
         except (AttributeError, ImportError, NotImplementedError, OSError) as exc:
             self.skipTest(f"Directory links are unavailable: {exc}")
+
+    def test_system_temporary_directory_alias_keeps_race_hooks_effective(self):
+        actual_temp = self.parent / "system-temp-real"
+        actual_temp.mkdir()
+        alias_temp = self.parent / "system-temp-alias"
+        self.directory_alias(actual_temp, alias_temp)
+        self.assertNotEqual(alias_temp, alias_temp.resolve())
+        cases = [type(self)(name) for name in (
+            "test_install_plan_preserves_edits_before_apply_and_after_ownership_check",
+            "test_backup_redirection_before_temporary_creation_preserves_outside_files",
+            "test_backup_redirection_before_replace_does_not_delete_external_temporary_name",
+        )]
+        result = unittest.TestResult()
+        with patch.object(tempfile, "tempdir", str(alias_temp)):
+            unittest.TestSuite(cases).run(result)
+        self.assertEqual(result.testsRun, len(cases))
+        self.assertEqual(result.errors, [])
+        self.assertEqual(result.failures, [])
+        self.assertEqual(result.skipped, [], "Alias race hooks must run rather than skip")
+        for case in cases:
+            self.assertEqual(case.parent, case.parent.resolve())
+            case.parent.relative_to(actual_temp)
 
     def linked_worktree(self):
         (self.root / "README.md").write_text("Fixture only\n", encoding="utf-8")
@@ -535,7 +563,7 @@ class TestInstallSafety(unittest.TestCase):
         outside = self.parent / "outside"
         outside.mkdir()
         (outside / "marker.bin").write_bytes(b"Outside marker\r\n")
-        before = self.snapshot(outside)
+        before = self.snapshot_with_mtimes(outside)
         backups = self.root / installer.STATE_DIR / "backups"
         self.directory_alias(outside, backups)
         planned = installer.entry_content("CLAUDE.md", "CLAUDE.md", None, "Changed", "", original.decode("utf-8"))
@@ -543,7 +571,7 @@ class TestInstallSafety(unittest.TestCase):
             with installer.installation_transaction():
                 installer.install_file(path, planned, self.root, False, {"write": 0, "skip": 0})
         self.assertEqual(path.read_bytes(), original)
-        self.assertEqual(self.snapshot(outside), before)
+        self.assertEqual(self.snapshot_with_mtimes(outside), before)
 
     def test_backup_redirection_before_temporary_creation_preserves_outside_files(self):
         original = self.seed_claude_entry(b"# Original rule\r\n")
@@ -554,7 +582,7 @@ class TestInstallSafety(unittest.TestCase):
         outside = self.parent / "outside"
         outside.mkdir()
         (outside / "marker.bin").write_bytes(b"Outside marker\r\n")
-        before = self.snapshot(outside)
+        before = self.snapshot_with_mtimes(outside)
         real_mkdir = Path.mkdir
         redirected = []
 
@@ -573,7 +601,7 @@ class TestInstallSafety(unittest.TestCase):
             with installer.installation_transaction(), patch.object(Path, "mkdir", new=redirect_after_mkdir):
                 installer.install_file(path, planned, self.root, False, {"write": 0, "skip": 0})
         self.assertTrue(redirected)
-        self.assertEqual(self.snapshot(outside), before)
+        self.assertEqual(self.snapshot_with_mtimes(outside), before)
         self.assertEqual(path.read_bytes(), original)
         self.assertEqual(self.snapshot(archived), {})
         self.assertEqual(backups.resolve(), outside.resolve())
@@ -609,7 +637,7 @@ class TestInstallSafety(unittest.TestCase):
                 backups.rename(archived)
                 self.directory_alias(outside, backups)
                 (outside / pending[0]).write_bytes(b"External file with the same temporary name\r\n")
-                expected_outside.update(self.snapshot(outside))
+                expected_outside.update(self.snapshot_with_mtimes(outside))
 
         planned = installer.entry_content("CLAUDE.md", "CLAUDE.md", None, "Changed", "", original.decode("utf-8"))
         with self.assertRaisesRegex(ValueError, "备份路径.*(外部|链接)"):
@@ -618,7 +646,8 @@ class TestInstallSafety(unittest.TestCase):
                     patch.object(installer.os, "chmod", side_effect=redirect_before_replace):
                 installer.install_file(path, planned, self.root, False, {"write": 0, "skip": 0})
         self.assertTrue(pending)
-        self.assertEqual(self.snapshot(outside), expected_outside)
+        self.assertTrue(expected_outside, "The backup directory must actually be redirected")
+        self.assertEqual(self.snapshot_with_mtimes(outside), expected_outside)
         self.assertEqual(path.read_bytes(), original)
         self.assertEqual((archived / pending[0]).read_bytes(), original)
 
