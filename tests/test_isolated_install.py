@@ -11,7 +11,7 @@ from selftest import KIT, PY, install, run, rmtree_readonly
 
 class TestIsolatedInstall(unittest.TestCase):
     def setUp(self):
-        self.root = Path(tempfile.mkdtemp(prefix="mac-isolated-"))
+        self.root = Path(tempfile.mkdtemp(prefix="mac-isolated-")).resolve()
         self.assertEqual(run("git", "init", "-q", cwd=self.root).returncode, 0)
 
     def tearDown(self):

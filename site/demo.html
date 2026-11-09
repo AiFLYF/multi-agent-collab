@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#0b0e13">
-  <meta name="description" content="体验多 AI 协作看板：查看会话、模拟指令与回复、完成任务。所有内容均为本页演示数据。">
+  <meta name="description" content="体验多 AI 协作看板：工具调用记录活动，消息读取与回复，任务完成后待机，新任务重新登记文件。所有操作仅在本页模拟。">
   <title>协作看板交互演示 · multi-agent-collab</title>
   <link rel="icon" href="assets/logo/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/fonts.css">
@@ -17,56 +17,83 @@
   <div class="demo-shell">
     <header class="demo-nav">
       <a class="demo-brand" href="index.html"><img src="assets/logo/mark.svg" width="30" height="30" alt=""><span>multi-agent-collab</span></a>
-      <nav aria-label="演示导航"><a href="index.html">返回介绍</a><a class="button primary" href="index.html#sec-6">安装到我的项目 <span aria-hidden="true">↗</span></a></nav>
+      <nav aria-label="演示导航"><a href="index.html">返回介绍</a><a href="https://github.com/AiFLYF/multi-agent-collab#readme" target="_blank" rel="noopener">使用文档 ↗</a><a class="button primary" href="index.html#sec-6">选择平台安装 <span aria-hidden="true">↗</span></a></nav>
     </header>
-    <main id="demo-main">
+    <main id="demo-main" tabindex="-1">
       <div class="demo-intro">
-        <div><p class="eyebrow">THE SHARED WORKSPACE / INTERACTIVE DEMO</p><h1>多个 AI，进度一眼可见。</h1><p class="intro-copy">查看谁在做什么，发一条演示指令，再把一个任务标记完成。</p></div>
+        <div><p class="eyebrow">INTERACTIVE DEMO / 本机协作示意</p><h1>多个 AI，进度一眼可见。</h1><p class="intro-copy">体验工具记录活动、消息处理，以及任务完成后待机与接新任务。</p></div>
         <div class="demo-actions"><button id="demo-conflict" class="button" type="button">模拟文件占用冲突</button><button id="demo-reset" class="button" type="button">重置演示 <span aria-hidden="true">↺</span></button></div>
       </div>
       <p class="demo-notice"><span class="notice-dot" aria-hidden="true"></span><strong>示例数据</strong><span>操作仅在本页模拟，不读取你的项目，不向真实 agent 发送指令。刷新页面即可复原。</span></p>
       <noscript><p class="demo-notice">请启用 JavaScript 体验交互，或返回介绍页查看看板截图和安装说明。</p></noscript>
+      <div class="demo-guide" aria-label="演示体验步骤"><span><b>1</b> 发送消息</span><span><b>2</b> 本人调用工具并读取</span><span><b>3</b> 回复结果，任务完成后待机</span><span><b>4</b> 接新任务，重新登记范围</span></div>
+      <p id="demo-status" class="demo-status" role="status" aria-live="polite">Codex 已回复计划，事项仍待完成。试着在「消息与处理」中模拟回复结果。</p>
 
       <section class="metrics" aria-label="会话统计">
-        <div class="metric"><span>当前会话</span><strong id="metric-total">4</strong><small>一个共享工作区</small></div>
-        <div class="metric"><span><i class="dot active" aria-hidden="true"></i>活跃</span><strong id="metric-active">3</strong><small>正在推进任务</small></div>
-        <div class="metric"><span><i class="dot blocked" aria-hidden="true"></i>等待确认</span><strong id="metric-blocked">1</strong><small>需要协作回应</small></div>
-        <div class="metric"><span><i class="dot done" aria-hidden="true"></i>已完成</span><strong id="metric-done">0</strong><small>已留下收尾记录</small></div>
+        <div class="metric"><span>当前会话</span><strong id="metric-total">5</strong><small>同一项目 · 各自的 worktree</small></div>
+        <div class="metric"><span><i class="dot active" aria-hidden="true"></i>执行中</span><strong id="metric-active">3</strong><small>正在推进任务</small></div>
+        <div class="metric"><span><i class="dot blocked" aria-hidden="true"></i>受阻 / 暂停</span><strong id="metric-blocked">1</strong><small>仍保留文件占用</small></div>
+        <div class="metric"><span><i class="dot standby" aria-hidden="true"></i>待机</span><strong id="metric-standby">1</strong><small>无文件占用，等待新任务</small></div>
+        <div class="metric"><span><i class="dot done" aria-hidden="true"></i>已结束</span><strong id="metric-done">0</strong><small>终态保留，不能复活</small></div>
       </section>
 
       <div class="demo-grid">
         <section aria-labelledby="sessions-title">
-          <div class="section-heading"><div><h2 id="sessions-title">工作中的会话</h2><span class="subtle mono">demo-shop / .agents/sessions</span></div><label class="filter-label">状态<select id="session-filter"><option value="all">全部会话</option><option value="active">活跃</option><option value="blocked">等待确认</option><option value="done">已完成</option></select></label></div>
+          <div class="section-heading"><div><h2 id="sessions-title">会话与文件占用</h2><span class="subtle mono">demo-shop / .multi-agent-collab/sessions/</span></div><label class="filter-label" for="session-filter">状态<select id="session-filter"><option value="all">全部会话</option><option value="active">执行中</option><option value="blocked">受阻 / 暂停</option><option value="standby">待机 · 无占用</option><option value="done">已结束</option></select></label></div>
+          <label class="session-search-label" for="session-search">查找会话<span>平台、任务、分支或文件</span></label><input type="search" id="session-search" class="session-search" placeholder="例如 Codex、README、mobile" autocomplete="off" aria-describedby="session-search-status">
+          <p id="session-search-status" class="subtle search-status" role="status" aria-live="polite">显示全部 5 个会话</p>
           <div id="demo-sessions" class="session-grid"></div>
-          <p id="session-empty" class="empty-state" hidden>没有这个状态的会话。试试其它筛选条件。</p>
-          <div class="workflow-note"><span class="step-number mono">01 → 02 → 03</span><p><strong>先协调，再开工，最后留记录。</strong><br>所有平台读取同一份总章，每个会话只更新自己的状态。</p><a href="index.html#sec-3">了解协作约定 ↗</a></div>
+          <div id="session-empty" class="empty-state" hidden>没有符合条件的会话。<button id="session-filter-clear" class="text-button" type="button">清空搜索与筛选</button></div>
+          <section id="demo-activation-panel" class="panel activation-panel" aria-labelledby="activation-title" hidden>
+            <div class="panel-heading"><h2 id="activation-title">给待机会话登记新任务</h2><button id="activation-cancel" class="text-button" type="button">取消登记</button></div>
+            <p id="activation-owner" class="form-note"></p>
+            <form id="demo-activation">
+              <label for="activation-task">新任务</label><input id="activation-task" name="task" type="text" required maxlength="120" placeholder="例如：补充接口测试">
+              <label for="activation-branch">任务分支</label><input id="activation-branch" name="branch" type="text" required maxlength="120" placeholder="feature/new-task" aria-describedby="activation-policy-note">
+              <p id="activation-policy-note" class="form-note">演示使用 Git Flow 的任务分支；登记前核对分支、原消息与文件范围。</p>
+              <label for="activation-files">完整文件范围，每行一个</label><textarea id="activation-files" name="files" rows="2" required placeholder="src/feature.py&#10;tests/test_feature.py" aria-describedby="activation-status"></textarea>
+              <button id="activation-conflict" class="text-button" type="button">填入已占用文件，试试冲突检查</button>
+              <p id="activation-status" class="form-note" role="status" aria-live="polite">填写新任务和完整范围，登记成功后才开始。</p>
+              <div class="form-footer"><span>仅演示，不创建真实分支或文件</span><button id="activation-submit" class="button primary" type="submit">核对并登记新任务</button></div>
+            </form>
+          </section>
+          <div class="workflow-note"><span class="step-number mono">完成 → 待机 → 新任务</span><p><strong>事项回复不等于任务收尾。</strong><br>任务完成后待机释放范围，新任务重新登记；blocked 与控制生效时保留占用。</p><a href="index.html#sec-3">了解协作约定 ↗</a></div>
         </section>
 
         <aside class="side-stack">
-          <section class="panel" aria-labelledby="directive-title">
+          <section class="panel directive-panel" aria-labelledby="directive-title">
             <div class="panel-heading"><h2 id="directive-title">发一条演示指令</h2><span class="small-badge">本页模拟</span></div>
             <form id="demo-directive">
               <label for="directive-target">发给谁</label>
-              <select id="directive-target" name="target"><option value="any">所有会话</option></select>
+              <select id="directive-target" name="target"><option value="any">所有未结束会话（含待机）</option></select>
+              <label for="directive-action">事项类型</label><select id="directive-action" name="action" aria-describedby="directive-kind-note"><option value="message">普通留言 · 计划与结果</option><option value="pause">暂停 · 停止推进，保留占用</option><option value="cancel">取消 · 停止任务，等待交接</option><option value="avoid">避让 · 不再修改指定文件</option></select>
+              <p id="directive-kind-note" class="form-note">普通留言先回复计划，处理完再回复结果。</p>
+              <div class="directive-presets" aria-label="示例消息"><button type="button" data-demo-preset="message">补充验证结果</button><button type="button" data-demo-preset="pause">先停一下</button><button type="button" data-demo-preset="avoid">避让文件</button></div>
               <label for="directive-body">指令内容</label>
-              <textarea id="directive-body" name="body" rows="3" maxlength="400" required placeholder="例如：完成后先补充测试结果，再继续下一步。"></textarea>
-              <div class="form-footer"><span>仅用于体验指令与回复流程</span><button class="button primary" type="submit">模拟发送 <span aria-hidden="true">↑</span></button></div>
+              <textarea id="directive-body" name="body" rows="3" maxlength="400" required placeholder="例如：请补充实际验证结果，完成后在原消息回复。" aria-describedby="directive-length"></textarea>
+              <div class="form-footer"><span id="directive-length">0 / 400 字</span><button id="directive-send" class="button primary" type="submit">模拟发送 <span aria-hidden="true">↑</span></button></div>
             </form>
+            <p class="form-note">发送后由你点「模拟工具检查消息」，再在下方读取与处理。页面不会自动生成完成结果。</p>
           </section>
-          <section class="panel" aria-labelledby="replies-title">
-            <div class="panel-heading"><h2 id="replies-title">指令与回复</h2><span class="subtle mono" id="reply-count">1 条</span></div>
-            <div id="demo-messages" class="messages"></div>
+          <section class="panel tool-panel" aria-labelledby="tool-check-title"><div class="panel-heading"><h2 id="tool-check-title">工具调用与本人活动</h2><span class="small-badge">1.8</span></div><p class="form-note">带本人身份的正常调用更新活动，并顺带提示相关消息；查看页面、搜索与筛选不会替 agent 续活。</p><label for="demo-tool-session" class="tool-session-label">这次由哪个会话调用</label><select id="demo-tool-session" aria-describedby="demo-notifications"></select><button id="demo-tool-check" class="button" type="button">模拟本人调用工具</button><p id="demo-notifications" class="tool-notifications" role="status" aria-live="polite">暂无新提示。选一个会话，模拟它正常调用工具。</p></section>
+          <section class="panel control-note"><h2>活动、待机与完成分开</h2><p>工具调用证明最近有活动，不会把 blocked 或待机变成执行中。待机没有文件占用，新任务仍需检查并登记。</p><p>暂停、取消、避让即便已回复，也仍生效；明确解除后再恢复原任务或登记新任务。普通事项回复不自动收尾会话。</p>
           </section>
         </aside>
       </div>
 
+      <section class="panel messages-panel" aria-labelledby="replies-title"><div class="panel-heading"><div><h2 id="replies-title">消息与处理</h2><span class="subtle mono">.multi-agent-collab/inbox/ · 本页模拟</span></div><div class="message-heading-actions"><span class="subtle mono" id="reply-count">1 条</span><label class="filter-label" for="message-filter">筛选<select id="message-filter"><option value="all">全部事项</option><option value="open">待处理</option><option value="complete">已完成普通事项</option><option value="control">生效中的控制</option></select></label></div></div><div id="demo-messages" class="messages"></div><p id="messages-empty" class="empty-state" hidden>此筛选下没有消息事项。</p></section>
+
       <section class="panel timeline-panel" aria-labelledby="timeline-title">
-        <div class="panel-heading"><h2 id="timeline-title">共享工作记录</h2><span class="subtle mono">.agents/worklog / 演示时间线</span></div>
+        <div class="panel-heading"><h2 id="timeline-title">共享工作记录</h2><span class="subtle mono">.multi-agent-collab/worklog/ · 演示时间线</span></div>
         <ol id="demo-timeline" class="timeline"></ol>
       </section>
-      <p id="demo-status" class="demo-status" role="status" aria-live="polite">试着给一个会话发指令，或者把任务标记完成。</p>
+      <details class="demo-real"><summary>在自己的项目使用真实看板与消息工具</summary><p>先完成安装，再在目标项目运行。已有旧版安装沿用原布局；通知给出的读取参数包含实际路径与会话 ID。</p><div class="real-code-head"><span>示例平台 Codex</span><button id="demo-copy-command" class="button" type="button">复制命令</button></div><pre><code id="demo-real-command">python .multi-agent-collab/tools/agents_status.py --web
+python .multi-agent-collab/tools/agents_status.py --context --agent codex --session &lt;自己的ID&gt;
+python .multi-agent-collab/tools/agents_messages.py list --agent codex --session &lt;自己的ID&gt;
+python .multi-agent-collab/tools/agents_session.py finish &lt;自己的ID&gt; --agent codex --summary "实际结果" --tests "实际验证" --standby
+python .multi-agent-collab/tools/agents_session.py activate &lt;自己的ID&gt; --agent codex --task "新任务" --files &lt;完整范围&gt;</code></pre><p>最终答复前实际验证、回复原事项并收尾；未完成用 handoff 保留占用。既有对话重读变化部分，长驻看板重启；套件不会自动唤醒待机会话或向任意 shell 注入命令。</p></details>
     </main>
-    <footer class="demo-footer"><span>本页为交互示意，真实看板请在目标项目运行 <code>python tools/agents_status.py --web</code></span><a href="index.html#sec-6">选择平台并安装 →</a></footer>
+    <footer class="demo-footer"><span>本页仅模拟 · 真实看板在目标项目运行 <code>python .multi-agent-collab/tools/agents_status.py --web</code></span><a href="index.html#sec-6">选择平台并安装 →</a></footer>
   </div>
 </body>
 </html>

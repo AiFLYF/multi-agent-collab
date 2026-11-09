@@ -1,5 +1,208 @@
 # 可行性验证与使用边界
 
+## Windows 3.13 权限语义补验（2026-11-09）
+
+第二轮 [CI 42620407786](https://github.com/AiFLYF/multi-agent-collab/actions/runs/42620407786) 的 11 个组合通过，仅 Windows 3.13 的一项 fallback 权限测试失败；该版本在 Windows 新增 fchmod，使原先跳过的测试执行，但 Windows 不能表示测试写死的 POSIX 0640。
+真实 Windows 文件在请求 0640 后实际为 0666，原子替换后仍为 0666，产品已保留原系统模式。测试改为严格比较调用前后的实际模式，并加强错误后的模式、mtime 与内容保全。
+Linux 4 项真实权限回归通过；Windows 的实际模式配对和强制执行相同 fallback 回归通过，保留原失败及强制执行不是 Python 3.13 运行时的说明。最终版本仍须以最新提交的完整 CI 为准。
+
+## 首轮远端 CI 与环境契约修复（2026-11-09）
+
+功能分支首个推送提交 `cdfe7ef` 的 [CI 42614634829](https://github.com/AiFLYF/multi-agent-collab/actions/runs/42614634829) 中，Ubuntu 3.8/3.10/3.12/3.13 全部通过，Windows 与 macOS 八组合失败，失败日志保留。
+失败集中在未规范化的系统临时目录别名：macOS `/var` 与 `/private/var`、Windows `RUNNER~1` 与实际用户目录使直接调用库的测试夹具与 CLI 真实路径不同；Windows 宿主 CP1252 标准流也会先抛中文编码错误。
+
+产品代码不因这些失败改变，两个测试夹具采用真实根路径，新增 symlink/junction 系统临时目录下执行原竞态案例的回归，外部内容、mtime 及实际重定向断言保留并加强。CI 仅明确 Python 标准流 UTF-8。
+Linux 真实系统临时目录别名修前 33 项出现 11 失败、1 错误，修后 34/34 通过；Windows 的新 40 项受影响验证为 39 通过、1 POSIX 跳过，退出 0，包含 6 项工作流回归及真实非 UTF-8 宿主 Unicode 输出烟测。
+原完整 416 项验收对应前一冻结代码；当前产品源码与其一致，新测试、CI 配置与文档另行验证，不把定向测试相加成一次全量。
+
+本机新证据在私有 `risk-audit/`：`mac-alias-before-fix.log`、`mac-alias-after-fix.log`、`windows312-ci-fix-affected.json`、同名日志与首轮远端失败日志。最终矩阵结果查看最新功能分支对应 CI，版本仍待发布。
+
+## 外部审查、契约修复与提交候选验收（2026-11-09）
+
+本轮验证提交前的 117 文件冻结候选，基于 `develop` 的 `2e8ba9e29443ff2c80e66ec465f338ac3723b701`，功能分支为 `feature/session-activity-standby`，版本仍为 **1.8.0，待发布**。
+推送与发布是不同阶段；最终提交以 Git 为准，远端工作流结果以对应提交的 CI 为准。以下旧记录仍对应各自当时的工作副本。
+
+原有 26 个未跟踪文件全部是产品源码：7 个核心工具、16 个回归测试、2 份文档和 1 个测量脚本；本轮另加 4 个必要回归测试。
+已在独立 Git 候选核验全部文件及安装器核心清单，私有 `.agents/` 记录不在产品清单中。`main` 与 `develop` 仅合并历史分叉，文件树 SHA 相同，无内容分叉。
+
+| 实际验收范围 | 结果 |
+|---|---|
+| Windows / Python 3.12.10 完整冻结候选 | selfcheck 48/48、selftest 44/44、unittest 416 项（404 通过、12 项平台跳过）、隔离演练 114/114；各阶段退出 0 |
+| WSL Ubuntu 26.04 / Python 3.14.4 完整冻结候选 | selfcheck 48/48、selftest 44/44、unittest 416 项（408 通过、8 项平台跳过）、隔离演练 114/114；各阶段退出 0 |
+| 原子写与状态修复 | Linux 真实模式位与失败保全回归、新建 0600、完整状态拒绝、NUL 注释及原任务/范围保全均包含在最新整套测试中 |
+| 文档与发布门控 | 6 项文档契约、5 项发布逻辑回归包含在整套测试；actionlint 1.7.12 校验两份工作流退出 0 |
+| 真实浏览器工具 | 本机只读看板 6 项检查通过，默认及手机视口 2 张 JPEG 截图已查看；无运行错误、横向溢出或记录写入，原 mtime 保留 |
+| 静态与预算 | 40 个产品 Python 文件编译及 3.8 语法解析通过；必读 6,327 字符，预算通过；精确 tokens=null |
+
+两个完整驱动各阶段退出 0，冻结候选源码 SHA 前后一致。之后只补验收报告与 CHANGELOG，源码和工作流不变；文档收尾另行检查。
+模式复制与非法状态的修前失败、候选 EOF 空行拒绝、浏览器首次连接超时及私有探针错误均保留，不计作通过；没有放宽保护断言。
+
+本轮私有证据根目录为 `.agents/test-evidence/risk-audit/`：`windows312-risk-final-verification.json`、`linux314-risk-final-verification.json` 及同前缀日志、演练报告；`python-static.json`、`actionlint.json`、`status-ui-browser.json` 和 `status-ui-server.json`。
+最后 Git 候选清单为 `.agents/test-evidence/prepush-candidate-20261109-191617.json`。本机证据不随源码提交。
+
+本地未运行 macOS 或 Python 3.8 实际运行时，远端 3 系统 × 4 Python 版本的结果见对应 CI；每个真实 AI 客户端的提示词遵循及精确模型账单仍需实测。
+Pages 的新门控在功能分支中验证，合入 main 后才影响线上部署；1.8.0 发布仍遵循 release 流程。
+
+## 本轮推送前候选、进程树与跨运行时验收（2026-11-09）
+
+本记录对应 **1.8.0，待发布** 的本地工作副本，分支 `feature/session-activity-standby`，源码 HEAD 为 `2e8ba9e29443ff2c80e66ec465f338ac3723b701`。
+产品改动尚未提交、推送或发布；独立 Git 候选用于核对实际文件内容，不表示该 HEAD 已包含这些未提交改动。
+最后候选清单含 113 个产品文件；工具修复后的完整 Linux 验收与 Windows 补测如下。旧整套和新 delta 分开记录，不能相加成一次全量结果。
+
+| 实际运行的快照与范围 | 结果 |
+|---|---|
+| Windows / Python 3.12：112 文件候选的完整验收，发生最后锁外首读与 fd 预检修复之前 | selfcheck 48/48、selftest 44/44、unittest 392 项（385 通过、7 项平台跳过）、隔离演练 114/114；同步、预算及 diff 检查均退出 0 |
+| 锁内首读修复后，Windows / Python 3.12 与 3.9 的 8 个受影响模块 | 各 163 项（156 通过、7 项平台跳过），退出 0；日志计时 242.828/208.458 秒，驱动计时 244.765/210.110 秒 |
+| 最后 messages fd 预检修复，Windows / Python 3.12 与 3.9 | `test_notifications.py` 各 52/52，退出 0；实际 12.948/16.448 秒 |
+| 同一 messages 修复，WSL Ubuntu 26.04 / Python 3.14.4 | 通知回归 52 项（51 通过、1 项平台跳过），1.747 秒，退出 0 |
+| 最终修复工作副本，WSL Ubuntu 26.04 / Python 3.14.4 完整验收 | selfcheck 48/48、selftest 44/44、unittest 396 项（388 通过、8 项平台跳过）、隔离演练 114/114；各阶段退出 0 |
+| 正常命令的原始标准流配对 | Windows 3.12、Windows 3.9、Linux 3.14 均保留非 UTF-8 字节、NUL、stdin/stdout/stderr 和原退出码 7，配对检查通过 |
+| 本轮新增浏览器补测 | Edge 的终态占用冲突 14 项、更新安装提示词 10 项，共 24 项通过，4 张桌面/手机截图；无横向溢出或页面运行错误 |
+| 最后静态检查与上下文预算 | 36 个产品 Python 文件编译及 3.8 语法解析通过；必读文本 6,327 字符，低于 6,500，较基线减少 48.15%；tokens=null |
+
+Windows 的 163 项覆盖 activity、activity integration/concurrency、run、jobs、processes、terminal jobs 和 sync compatibility；不包括最后新增补丁所在的消息回归，后者单独运行上述 52 项。
+Linux 最终整套包含锁内首读回归与 messages fd 预检补丁。selftest 驱动计时 39.293 秒；unittest 日志/驱动计时为 651.680/652.592 秒，演练驱动计时 71.269 秒。
+同步、预算和 diff 检查均实际退出 0；Linux 最终日志没有意外 `Traceback` 或 `Exception in thread`。不同环境的顺序计时不用于宣称提速。
+
+本轮针对实际发现的问题补齐了三类保护。旧核心 `sync / mirror` 先静态核对所需工具、字面 CLI 和依赖，拒绝给旧工具写入不兼容的待机提示；完整 update 后再同步。
+`run` 使用内部 supervisor 管理正常继承的进程树，父命令退出而子任务仍执行时继续保留占用；伪造 done/closed 也不能让运行中或无法核验的记录变成已释放。
+活动与运行记录的首次读取移入登记锁，防止合法并发更新互相遮盖；输出 fd 不可用则在消息扫描和回执写入前拒绝，不把未送达内容当成已读。
+
+失败历史保留并分别核验：Windows 3.9 早期一组 36 项运行测试曾有 1 项 stderr 丢失失败，单项 diagnostic 随后通过；不能据此认定与另行确定性复现的两处锁外首读竞态同因。
+新增 `test_activity_concurrency.py` 的 2 项回归在 Windows 3.12/3.9 分别通过，随后纳入两个运行时的 163 项受影响验证。Linux 首次完整驱动在 172 项停止（169 通过、2 跳过、1 失败），关闭 stdout fd 的初始化场景错误返回 0，原断言要求 2；添加真实 `TextIOWrapper` 的 fileno/fstat 预检后，通知回归与最终 396 项整套通过。
+另一次 Linux `/tmp` 夹具因 VM 空闲后临时内容丢失而未启动驱动，未计为测试执行；改用 `/var/tmp` 后复验。原启动失败和混合编码的错误输出均保留，没有删除失败记录或放宽保护断言。
+
+候选与原始证据位于本机私有 `.agents/test-evidence/`，以下路径相对该目录，不随源码提交：
+
+- 候选清单、逐文件 SHA 与独立 Git 核验：`prepush-candidate-20261109-131825.json`。
+- Windows 112 文件整套：`prepush-checks/windows312-verification.json`；最终锁内首读补测：`prepush-checks/windows312-final-affected-verification.json`、`prepush-checks/windows39-final-affected-verification.json` 及同名前缀的原始日志。
+- 最后通知补丁：`prepush-checks/windows39-notifications-final.log`、`prepush-checks/linux314-notifications-final.log`、`prepush-checks/linux314-notifications-final-errors.log`；Windows 3.12 的该次 52 项为工具转录，没有单独原始日志。
+- Linux 首轮失败：`prepush-checks/linux314-final-verification.json`；最终成功：`prepush-checks/linux314-retry-verification.json`、同名前缀的各阶段日志与演练报告。
+- 原始标准流：`prepush-checks/windows312-raw-streams.json`、`prepush-checks/windows39-raw-streams.json`、`prepush-checks/linux314-final-raw-streams.json`；静态清单：`prepush-checks/python-static-final.json`。
+- 最新浏览器：`prepush-browser/terminal-browser.json`、`prepush-browser/updated-install-prompt-browser.json` 和 4 张对应截图；此前 94 项浏览器检查、22 张截图保留为上一轮证据。
+
+在套件源码目录复验；安装与业务操作由演练在外置临时项目执行，禁止源码自安装：
+
+```text
+python tools/agents_status.py --selfcheck
+python tests/selftest.py
+python -m unittest discover -s tests -p "test_*.py"
+python scripts/rehearse_workflow.py --report .agents/rehearsal-latest.md
+python scripts/sync_install_docs.py --check
+python scripts/measure_context.py --baseline 2e8ba9e --check --json
+```
+
+CI 已配置 3 个系统 × Python 3.8/3.10/3.12/3.13，并第二次 checkout 固定的 1.7 源码提交，设置 `MULTI_AGENT_TEST_OLD_KIT`，使实际旧版升级回归在 CI 有真实夹具；这些是配置，尚未在用户远端实跑。
+macOS、Python 3.8 真实运行及每个 AI 客户端新对话的自动收尾遵循仍未实测，浏览器检查未进入 CI。正常继承树之外的主动 `setsid`、外部服务和任意编辑器不在 supervisor 保证范围。
+提示词、字段与日志不认证授权或测试通过；精确 token 缓存缺失，不把字符降幅当成模型账单。以下历史条目对应各自当时快照，不替代本轮结果。
+
+## 上轮活动记录、待机与收尾验收（2026-11-09）
+
+待发布 1.8.0、本地分支 `feature/session-activity-standby` 的最终工具工作副本实际通过：
+48 项 selfcheck、44 项 selftest、341 项 unittest（337 通过、4 项 Windows 不适用跳过）和 114 个完整隔离演练点。
+最终驱动各阶段退出 0，selftest/unittest/演练分别为 73.656/722.907/64.734 秒。
+驱动对 30 个工具、测试和脚本做编译与 Python 3.8 语法检查；按源码清单包含示例共 31 个 Python 文件另行检查通过。
+实际运行 Windows / Python 3.12.10，未执行 Python 3.8 运行时。
+
+明确的本人平台与会话 ID 使普通状态、消息、会话及安装工具调用记录最近活动；匿名查询、网页轮询和审计模式不续活。
+60 秒节流避免重复写入，`run` 保留实际输出与退出码，并登记正在执行的命令。
+任务完成用 `finish --standby` 保存结果、清空范围、保留对话身份；`activate` 为新任务重新检查分支、策略、范围和指令。
+活进程或无法核验的进程阻止提前释放占用，blocked 和失活执行任务仍保留范围，done 不可复活。
+
+| 本轮实际验证 | 结果 |
+|---|---|
+| 最后一次完整回归 | 48/44/341 项及 114 个演练点，各阶段退出 0 |
+| 初次完整已安装试用 | 58 条命令、124 项检查及 12 项业务测试通过；对应最后普通消息修复前的冻结副本 |
+| 最终 release 已安装补测 | 24 条命令、53 项检查、6 项业务测试与 2 项旧布局文档检查通过；108 份源码 SHA 一致 |
+| 真实默认 60 秒长命令 | 新普通消息只提示，内容更新再次提示；63.828 秒命令保持原单份 JSON 与退出 0，下一条未确认命令拒绝 |
+| 浏览器常规与待机交互 | Playwright + Edge 51+35 项通过，页面运行时错误 0；桌面 1440×1000 与手机 390×844 |
+| 手机菜单补测 | 改为实色背景，8 项浏览器检查通过；22 张交互截图及原透明菜单对比保留 |
+| 静态预算 | RULES + START_HERE 6,327 字符，6,500 字符预算通过；编码缓存缺失，tokens=null |
+
+本轮实际修复了 Windows 子进程输出丢失、内部目录链接使收尾写错记录、启动目录重定向、
+长命令尚未结束却被提前待机并覆盖文件，以及普通消息错误覆盖成功退出码的问题。
+目录、原字节、PID 和当前分支均有真实拒绝/保全检查；普通消息只提示，不绕过下一条命令前的要求确认。
+通知在运行期间按内容版本去重，内存游标不标读，不增加持久化“已提示”记录。
+
+完整原始退出码、逐文件 SHA 与日志在私有 `.agents/test-evidence/activity-verification-20261109-074020.json`。
+最终安装补测在 `activity-real-trial/release-trial-20261109-075117.json`，浏览器报告在 `activity-browser/` 的
+`browser-regression.json`、`browser-lifecycle.json` 与 `browser-menu-final.json`。
+全部中间失败原文保留；测试自身的 CRLF、输出通道和清单映射错误未计为通过，保护断言没有放宽。
+
+全量验收后仅补文档、README 配图和手机菜单 CSS；工具与界面脚本代码未变，菜单修改由真实浏览器另行复测。
+这些结果对应本地工作副本，未提交、推送或发布，不表示默认下载、线上页面或所有真实 AI 客户端已更新。
+
+## 上轮 README、展示站与看板浏览器验收（2026-11-09）
+
+待发布 1.8.0、本地分支 `feature/readme-ui-usability` 的最终界面与文档工作副本实际通过：
+48 项看板 selfcheck、44 项 selftest、212 项 unittest（210 通过、2 项 Windows 不适用跳过）及 105 个完整隔离演练点。
+完整驱动各阶段退出 0；selftest/unittest/演练分别为 170.562/1175.016/83.687 秒。
+21 个 Python 文件编译与 3.8 语法解析通过，实际运行 Windows / Python 3.12.10。
+
+使用 Python Playwright 驱动本机 Microsoft Edge 156.0.4314.56，实际打开展示站、演示页和安装在临时项目中的真实看板。
+隔离浏览器上下文未连接用户账号。1440×1000 桌面与 390×844 手机视口完成 51 项交互检查；
+刻意延迟数据响应后又完成 11 项定位与取消检查，共 62 项断言通过，页面运行时错误为 0，保存 16 张浏览器截图。
+该轮截图保存在私有 `ui-browser/`；[README 看板配图](assets/board-screenshot.png) 使用最新一次实拍。
+
+| 浏览器实际操作 | 验证结果 |
+|---|---|
+| 平台组合、搜索、隐藏选择、清空与空结果 | 提示词、命令和文件清单随选择一致更新 |
+| 真正复制后键盘粘贴；模拟剪贴板拒绝 | 粘贴内容与源文本相同；失败提示手动复制，不假报成功 |
+| 键盘安装页签与手机菜单 | 可操作，桌面与手机无横向溢出 |
+| 演示消息与控制流程 | 普通事项完成不 finish 会话；answered 暂停仍有效；解除后仍需明确恢复 |
+| 真实看板搜索、筛选与本页浏览标记 | 已关闭无回复不标成已回复；浏览标记不写 agent 回执 |
+| 真实 POST、发送时刷新、失败重试提示 | 每次仅落盘一条消息；发送中保持禁用，成功清草稿，失败保留正文 |
+| 数据到达前点击查看 | 一次点击后自动定位并聚焦；用户继续搜索可取消，不抢焦点 |
+| 只读服务与离线快照 | 不提供发送表单，仍可筛选、展开与复制 |
+
+实测修复了发送成功后立即点查看、数据尚未到达时无法自动定位的问题。
+早期选择器与等待时机错误、延迟夹具的 route 清理竞态均保留原失败记录；修正夹具后保持产品断言并重跑通过。
+完整回归前后源码指纹一致，验收后只补文档与 README 配图，界面和工具代码未变。
+
+原始退出码与源码 SHA 在私有 `.agents/test-evidence/readme-ui-verification-20261109-025540.json`；
+浏览器结果在同目录的 `ui-browser/browser-trial.json` 与 `browser-delayed-view.json`，截图位于 `ui-browser/`。
+安装说明同步、6,500 字符预算和 diff 检查实际通过；当前必读文本 5,432 字符，比基线减少 55.49%，精确编码缓存缺失，tokens 为 null。
+这些结果对应本地工作副本，未提交、推送或发布，不表示线上页面或所有 AI 客户端已更新。
+
+## 上轮消息机制与完整验收（2026-11-08）
+
+待发布 1.8.0、本地分支 `feature/production-readiness-token-budget` 的最终冻结工作副本实际通过：
+48 项看板 selfcheck、44 项 selftest、212 项 unittest（210 通过、2 项 Windows 不适用跳过）及 105 个完整隔离演练点。
+最终完整驱动的所有步骤退出 0；selftest/unittest/演练分别为 79.922/549.688/57.875 秒。
+21 个 Python 文件编译与 3.8 语法解析通过，实际运行 Python 3.12.10；未运行 3.8 或全部真实客户端。
+
+独立已安装试用完成 78 条实际命令和 196 项有效断言，三个业务项目更新后 5+3+2 项真实测试通过并正常 finish。
+最终通知/list 元数据扫描优化又经 10 条安装后命令和 39 项检查补测，7 条只读操作快照零写。
+最长命令分别为 10.343 与 2.217 秒，所有实际 CLI 保持原 90 秒门禁。
+
+覆盖短提示→按需 read→本会话回执→已答回复闭环、同平台与跨 worktree、同尺寸/同 mtime 内容变更、
+旧确认重新纳入、暂停/取消/避让、执行者和目标分别拦截、未完成原人类事项不能收尾、旧源参数兼容及单份 JSON。
+真实关闭 PIPE、关闭 fd1、stdout=None 都严格返回 2，原回执字节保全且消息未读；短写、flush 失败及 stderr 缺失同样回归。
+还验证 4097 条队列限额报错、归档恢复、损坏回执、旧布局分发和 purge 保留实际记录。
+
+最后全量修复了无效交接关联被普通门禁遮住的错误分类；保留错误 2 断言并补未完成=1/全文件零写、完成回复后=0。
+两处旧测试把 ACK 当成完成的场景已按原人类事项执行流程修正，其它回归和演练顺序审查通过。
+试用夹具的错误退出码期望及 Windows 模板后缀判定分别复测 17/17、13/13，通过后才计有效验证；全部中间失败原文保留。
+
+最终冻结聚合 SHA 为 `c0e77f2829fc0c3366ae63bdbbb4c9c9d9a4dbfe7d674cc93b6f44d2e3163f98`；
+完整退出码、原始日志和源码 SHA 在私有 `.agents/test-evidence/notifications-verification-20261108-044659.json`。
+验收后仅补报告，工具代码未变。文档同步、6,500 字符预算与 diff 检查实际通过，源码未提交、推送或发布。
+当前启动文本 5,432 字符，编码缓存缺失，tokens 为 null；通知扫描实际峰值内存约减少 86.9%，不冒充账单降幅。
+普通提示与默认 read 避免重复正文，显式完整 context 仍展开未答事项；升级当前进程的旧模块需下一次 CLI 或重启后切换。
+
+## 上轮本地更新与安全验收（2026-11-07）
+
+工作分支 `feature/production-readiness-token-budget` 的待发布 1.8.0 工作副本已在 Windows / Python 3.12 实跑完成：
+44 项 selftest、147 项 unittest（145 通过、2 个 Windows 不适用跳过）、48 项看板自检、93 个真实隔离演练点。
+独立子代理另通过 24 条更新命令和 147 项产品断言。安装文档同步、离线启动体积预算、18 文件编译与 Python 3.8 静态语法解析均通过；未执行 Python 3.8 运行时。
+
+新验收覆盖 `update/upgrade`、已安装更新入口、本地源迁移、同版本文件变化、检查/预览零写、重复更新零重写、BOM/CRLF 定制和旧摘要兼容、策略/平台/记录保全、误降级拒绝、失败回滚、purge 规划后编辑保护及备份路径重定向。
+完整演练实际调用已安装更新入口，再走双 worktree、HTTP 指令、handoff/resume/finish、业务测试与隔离本地 bare 推送，不触及用户远端。
+
+真实更新试用的最大命令耗时 2.881 秒，原 90 秒限制保持。第一次全量的 Windows 测试夹具在句柄未关闭时移动目录失败，改到关闭句柄后/替换前注入同一竞态、保持原保护断言后，第二次全量通过。
+旧试用失败及辅助目录 mtime 断言失败日志保留，不能当成通过或用旧快照替代最终测试。当前代码未提交、推送或发布；全部原始证据在私有 `.agents/test-evidence/`。
+详细问题、token 数据和边界见 [REAL_WORLD_REVIEW.md](REAL_WORLD_REVIEW.md)。
+
 ## 独立目录与原规则共存（2026-10-15）
 
 Windows / Python 3.12 本地验证通过 94 项回归：43 项基础/安装、17 项会话、29 项策略/接管/客户端、5 项共存兼容；48 项看板自检通过。
