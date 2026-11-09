@@ -1,5 +1,11 @@
 # 可行性验证与使用边界
 
+## Windows 3.13 权限语义补验（2026-11-09）
+
+第二轮 [CI 42620407786](https://github.com/AiFLYF/multi-agent-collab/actions/runs/42620407786) 的 11 个组合通过，仅 Windows 3.13 的一项 fallback 权限测试失败；该版本在 Windows 新增 fchmod，使原先跳过的测试执行，但 Windows 不能表示测试写死的 POSIX 0640。
+真实 Windows 文件在请求 0640 后实际为 0666，原子替换后仍为 0666，产品已保留原系统模式。测试改为严格比较调用前后的实际模式，并加强错误后的模式、mtime 与内容保全。
+Linux 4 项真实权限回归通过；Windows 的实际模式配对和强制执行相同 fallback 回归通过，保留原失败及强制执行不是 Python 3.13 运行时的说明。最终版本仍须以最新提交的完整 CI 为准。
+
 ## 首轮远端 CI 与环境契约修复（2026-11-09）
 
 功能分支首个推送提交 `cdfe7ef` 的 [CI 42614634829](https://github.com/AiFLYF/multi-agent-collab/actions/runs/42614634829) 中，Ubuntu 3.8/3.10/3.12/3.13 全部通过，Windows 与 macOS 八组合失败，失败日志保留。

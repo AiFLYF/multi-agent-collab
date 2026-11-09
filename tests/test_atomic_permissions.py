@@ -58,11 +58,17 @@ class TestAtomicPermissions(unittest.TestCase):
             path = Path(temporary) / "record.md"
             path.write_bytes(b"before\n")
             path.chmod(0o640)
+            # Windows 3.13 exposes fchmod but only supports the Windows
+            # readonly flag; preserve the effective mode, not a POSIX request.
+            original_mode = stat.S_IMODE(path.stat().st_mode)
             with mock.patch.object(board.os, "fchmod", None):
                 board._write_lf_atomic(path, "fallback\n")
-                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o640)
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), original_mode)
+                before_failure = path.stat()
                 with mock.patch.object(board.os, "chmod", side_effect=PermissionError("fallback denied")):
                     with self.assertRaisesRegex(PermissionError, "fallback denied"):
                         board._write_lf_atomic(path, "never replace\n")
             self.assertEqual(path.read_bytes(), b"fallback\n")
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), original_mode)
+            self.assertEqual(path.stat().st_mtime_ns, before_failure.st_mtime_ns)
             self.assertEqual(list(path.parent.iterdir()), [path])
