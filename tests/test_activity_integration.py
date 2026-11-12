@@ -6,17 +6,14 @@ import contextlib
 import http.client
 import io
 import json
-import os
 import subprocess
 import threading
 import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
-from unittest import mock
 
 from selftest import KIT, PY, inst, run, rmtree_readonly
-import agents_activity as activity
 import agents_messages as messages
 import agents_notifications as notifications
 import agents_session as sessions

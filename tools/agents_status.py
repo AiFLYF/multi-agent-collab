@@ -83,11 +83,11 @@ AUTH_FAIL_LIMIT = 5                        # 同一 IP 连续密码错误上限
 AUTH_LOCK_SEC = 60
 REQUEST_TIMEOUT_SEC = 10
 CONTEXT_MAX_CHARS = 6000
-_TARGET_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+_TARGET_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,100}$")
 _UNIQUE_METADATA_KEYS = {
     "agent", "branch", "status", "files", "started", "heartbeat", "last_activity", "last_command", "running_jobs", "workspace",
     "from", "to", "created", "date", "action", "acknowledged_inbox",
-    "acknowledged_inbox_versions", "schema_version",
+    "acknowledged_inbox_versions", "schema_version", "baseline_generation",
 }
 
 # 精确匹配的「已结束」状态词（取状态首词，小写）。
@@ -543,6 +543,7 @@ def load_sessions(roots: list[tuple[Path, bool]], now: datetime,
                 "terminal_job_conflict": terminal_job_conflict,
                 "last_task": kv.get("last_task", ""),
                 "task_completed_at": kv.get("task_completed_at", ""),
+                "baseline_generation": kv.get("baseline_generation", ""),
                 "pr": kv.get("pr", ""),
                 "file": f.name,
                 "path": str(f.resolve()),
@@ -568,8 +569,8 @@ def _inbox_body_reply(text: str) -> tuple[str, str]:
     reply = ""
     m = re.search(r"^##\s*回复[^\n]*\n(?P<r>[\s\S]*)$", text, re.M)
     if m:
-        reply = "\n".join(l for l in m.group("r").splitlines()
-                          if "待回复" not in l).strip()
+        reply = "\n".join(line for line in m.group("r").splitlines()
+                          if not line.strip().startswith(("（待回复", "(待回复"))).strip()
     lines = text.splitlines()
     i = 1 if lines and lines[0].lstrip().startswith("#") else 0
     # 跳过连续的头部 kv 行、HTML 注释与紧随的空行
@@ -578,17 +579,17 @@ def _inbox_body_reply(text: str) -> tuple[str, str]:
                               or lines[i].lstrip().startswith("<!--")):
         i += 1
     body_lines = []
-    for l in lines[i:]:
-        if l.startswith("## 回复") or l.strip() == "---":
+    for line in lines[i:]:
+        if line.startswith("## 回复") or line.strip() == "---":
             break
         # 跳过「## 指令」「## 背景」这类正文小节标题，只留正文本身
-        if l.startswith("## "):
+        if line.startswith("## "):
             continue
-        body_lines.append(l)
+        body_lines.append(line)
     body = "\n".join(body_lines).strip()
     # 去掉转义时为防结构注入加的行首空格（仅去我们加的那种整行缩进）
-    body = "\n".join(l[1:] if l.startswith(" ") and l[1:2] in ("#", "-", ">", "<")
-                     else l for l in body.split("\n"))
+    body = "\n".join(line[1:] if line.startswith(" ") and line[1:2] in ("#", "-", ">", "<")
+                     else line for line in body.split("\n"))
     return body.strip(), reply
 
 
@@ -662,8 +663,13 @@ def _neutralize_body(body: str) -> str:
 
 def create_directive(inbox_dir: Path, to: str, body: str,
                      from_name: str = "", now: datetime | None = None,
-                     action: str = "message") -> Path:
-    """把一条人类指令写成 Q-YYYY-MM-DD-NN.md（O_EXCL 抢序号，并发也不互撞）。"""
+                     action: str = "message", sender: str | None = None,
+                     label: str = "人类指令") -> Path:
+    """把一条消息写成 Q-YYYY-MM-DD-NN.md（O_EXCL 抢序号，并发也不互撞）。
+
+    ``sender`` 非空时写入真实会话 ID，用于 agent 之间的协作消息；人类看板
+    仍然走默认分支，``from`` 固定为 ``human``（含显示名）。
+    """
     to = (to or "any").strip()
     if to != "any" and not _TARGET_RE.match(to):
         raise ValueError(f"非法目标：{to!r}")
@@ -676,7 +682,16 @@ def create_directive(inbox_dir: Path, to: str, body: str,
     if len(body) > DIRECTIVE_MAX_LEN:
         raise ValueError(f"指令超过 {DIRECTIVE_MAX_LEN} 字")
     body = _neutralize_body(body)
-    sender = _clean_one_line(from_name or "", 20)
+    if sender is not None:
+        if (not isinstance(sender, str) or not _TARGET_RE.fullmatch(sender)
+                or sender.casefold().startswith("human")):
+            raise ValueError("发送者必须是合法会话 ID")
+        if action != "message":
+            raise ValueError("agent 只能发送普通协作消息")
+        who = sender
+    else:
+        display = _clean_one_line(from_name or "", 20)
+        who = f"human（{display}）" if display else "human"
     now = now or datetime.now()
     stamp = f"{now:%Y-%m-%d %H:%M}"
     prefix = f"Q-{now:%Y-%m-%d}-"
@@ -684,12 +699,11 @@ def create_directive(inbox_dir: Path, to: str, body: str,
     seq = len(existing) + 1
     title = _clean_one_line(body.splitlines()[0], 24)
     inbox_dir.mkdir(parents=True, exist_ok=True)
-    who = f"human（{sender}）" if sender else "human"
     for _ in range(50):
         name = f"{prefix}{seq:02d}.md"
         dest = inbox_dir / name
         content = (
-            f"# Q-{now:%Y-%m-%d}-{seq:02d}: 人类指令：{title}\n\n"
+            f"# Q-{now:%Y-%m-%d}-{seq:02d}: {label}：{title}\n\n"
             f"- from: {who}\n- to: {to}\n- status: open\n- action: {action}\n"
             f"- created: {stamp}\n- answered: \n\n"
             f"## 指令\n\n{body}\n\n---\n\n## 回复\n\n"
@@ -724,7 +738,7 @@ def load_worklogs(roots: list[tuple[Path, bool]], n: int = 3,
                 continue
             try:
                 text = f.read_text(encoding="utf-8", errors="replace")
-                heads = [l.strip() for l in text.splitlines() if l.startswith("## ")]
+                heads = [line.strip() for line in text.splitlines() if line.startswith("## ")]
             except OSError:
                 text = ""
                 heads = []
@@ -781,6 +795,182 @@ def fetch_open_prs(root: Path | None = None) -> list[dict] | None:
     if r.returncode != 0:
         return None
     return parse_prs(r.stdout)
+
+
+def changed_files(root: Path) -> list[str]:
+    """Return every path reported by git status, including untracked files.
+
+    ``--untracked-files=all`` is deliberate: a drift report must name files,
+    not an untracked directory, otherwise claim matching would be too coarse.
+    Renames include both the destination and the old path.
+    """
+    executable = resolve_git()
+    if not executable:
+        raise ValueError("Git 不可用，不能核验实际改动")
+    try:
+        command = subprocess.run([executable, "--no-optional-locks", "status", "--porcelain=v1", "-z",
+                                  "--untracked-files=all"], cwd=str(root), capture_output=True, timeout=20)
+        if command.returncode:
+            raise ValueError("Git 改动扫描失败，不能视为工作区干净")
+        if len(command.stdout) > 2 * 1024 * 1024:
+            raise ValueError("Git 改动扫描超过 2 MiB，请先整理生成文件或忽略规则")
+        raw = command.stdout.decode("utf-8", errors="strict")
+    except (OSError, UnicodeError, subprocess.TimeoutExpired) as exc:
+        raise ValueError("无法可靠扫描实际改动：" + str(exc)[:200]) from exc
+    if not raw:
+        return []
+    entries = raw.split("\0")
+    result: list[str] = []
+    index = 0
+    while index < len(entries):
+        line = entries[index]
+        index += 1
+        if not line:
+            continue
+        if len(line) < 4 or line[2] != " ":
+            raise ValueError("Git 改动记录格式无效")
+        code, name = line[:2], line[3:]
+        if any(flag in code for flag in "RC"):
+            # NUL format: destination first, then source.
+            if index >= len(entries) or not entries[index]:
+                raise ValueError("Git 重命名记录缺少原路径")
+            result.append(entries[index])
+            index += 1
+        if name:
+            result.append(name)
+    return sorted(set(result))
+
+
+def change_fingerprints(root: Path, files: list[str]) -> dict[str, str]:
+    """Cheap metadata snapshots detect later edits to already-dirty paths."""
+    result = {}
+    for relative in files:
+        path = root / relative
+        try:
+            path.absolute().relative_to(root.absolute())
+            if Path(relative).is_absolute() or ".." in Path(relative).parts:
+                raise ValueError("改动路径不在当前工作区内")
+            info = path.lstat()
+            result[_path_key(relative)] = ":".join(str(value) for value in
+                (info.st_dev, info.st_ino, info.st_mode, info.st_size, info.st_mtime_ns))
+        except FileNotFoundError:
+            result[_path_key(relative)] = "missing"
+    return result
+
+
+def _relative_key(value: str) -> str:
+    value = str(value)
+    if os.name == "nt":
+        value = value.replace("\\", "/")
+    while value.startswith("./"):
+        value = value[2:]
+    return value
+
+
+def _path_key(value: str) -> str:
+    key = _relative_key(value)
+    return key.casefold() if os.name == "nt" else key
+
+
+def path_covered(path: str, claims: list[str]) -> bool:
+    """True when a changed path is inside a declared file or directory claim."""
+    normalized = _path_key(path)
+    for claim in claims:
+        key = _path_key(claim)
+        item = key.rstrip("/")
+        if not item:
+            continue
+        if normalized == item or (key.endswith("/") and normalized.startswith(item + "/")):
+            return True
+    return False
+
+
+def _baseline_files(root: Path, session_id: str, generation: str = ""):
+    try:
+        path = _checked_state_path(root, state_path(root, "sessions") / (session_id + ".baseline.json"))
+        if not path.is_file():
+            return None
+        if path.stat().st_size > 2 * 1024 * 1024:
+            return None
+        with path.open("rb") as stream:
+            raw = stream.read(2 * 1024 * 1024 + 1)
+        _checked_state_path(root, path)
+        if len(raw) > 2 * 1024 * 1024:
+            return None
+        payload = json.loads(raw.decode("utf-8"))
+        if not isinstance(payload, dict) or type(payload.get("schema_version")) is not int:
+            return None
+        version = payload["schema_version"]
+        if version not in (1, 2):
+            return None
+        if generation and (version != 2 or payload.get("generation") != generation):
+            return None
+        files = payload.get("files")
+        if (not isinstance(files, list) or any(not isinstance(item, str) or "\x00" in item
+                or Path(item).is_absolute() or ".." in Path(item).parts for item in files)):
+            return None
+        keys = {_path_key(item) for item in files}
+        if version == 1:
+            return keys, None
+        fingerprints = payload.get("fingerprints")
+        if (not isinstance(fingerprints, dict) or set(fingerprints) != keys
+                or any(not isinstance(value, str) for value in fingerprints.values())):
+            return None
+        return keys, fingerprints
+    except (OSError, ValueError, TypeError, RuntimeError):
+        pass
+    return None
+
+
+def attach_drift(roots: list[tuple[Path, bool]], sessions: list[dict]) -> None:
+    """Attach unclaimed workspace changes to each live session.
+
+    A session's baseline is captured by ``start`` / ``activate``. Files that
+    were already dirty at that point are not blamed on the session. A file is
+    also ignored when any other live session in the same worktree claims it.
+    Old records without a baseline keep ``drift=None`` and are never guessed.
+    """
+    changes = {}
+    claims_by_workspace: dict[Path, list[str]] = {}
+    for other in sessions:
+        if other["closed"] or other.get("standby"):
+            continue
+        claims_by_workspace.setdefault(Path(other["workspace"]).resolve(), []).extend(other.get("files", []))
+    for session in sessions:
+        session.update(drift=[], drift_count=0, drift_truncated=False, drift_available=False)
+        if session["closed"] or session.get("standby"):
+            continue
+        workspace = Path(session["workspace"]).resolve()
+        baseline = _baseline_files(workspace, session["id"], session.get("baseline_generation", ""))
+        if baseline is None:
+            continue
+        if workspace not in changes:
+            try:
+                files = changed_files(workspace)
+                changes[workspace] = files, change_fingerprints(workspace, files)
+            except (ValueError, OSError, RuntimeError):
+                changes[workspace] = None
+        if changes[workspace] is None:
+            continue
+        actual, current_fingerprints = changes[workspace]
+        state_relative_dir = ""
+        try:
+            state_relative_dir = state_dir(workspace)
+        except ValueError:
+            pass
+        if state_relative_dir:
+            state_key = _path_key(state_relative_dir)
+            actual = [item for item in actual
+                      if _path_key(item) != state_key and not _path_key(item).startswith(state_key + "/")]
+        claims = claims_by_workspace.get(workspace, [])
+        keys, fingerprints = baseline
+        drift = [item for item in actual
+                 if not path_covered(item, claims) and (_path_key(item) not in keys or
+                    (fingerprints is not None and fingerprints.get(_path_key(item)) != current_fingerprints[_path_key(item)]))]
+        session["drift"] = drift[:50]
+        session["drift_count"] = len(drift)
+        session["drift_truncated"] = len(drift) > 50
+        session["drift_available"] = True
 
 
 def wt_recent_changes(path: str, minutes: int) -> int:
@@ -1076,6 +1266,7 @@ def collect(now: datetime, with_prs: bool, stale_min: int,
     wts = worktrees(root)
     roots = agent_roots(root, wts)
     sessions = load_sessions(roots, now, stale_min)
+    attach_drift(roots, sessions)
     inbox = load_inbox(roots, lean=compact)
     logs = (load_worklogs(roots, n=3,
                          since=now - timedelta(days=1) if compact else None,
@@ -1120,6 +1311,13 @@ def collect(now: datetime, with_prs: bool, stale_min: int,
             overlap = overlapping_files(session["files"], other["files"])
             if overlap:
                 warnings.append(f"文件占用冲突：{session['id']} 与 {other['id']}：{', '.join(overlap[:5])}")
+    for session in open_sessions:
+        drift = session.get("drift") or []
+        count = session.get("drift_count", len(drift))
+        if count:
+            sample = ", ".join(drift[:5])
+            more = " 等" if count > len(drift[:5]) else ""
+            warnings.append(f"未登记改动：{session['id']} 有 {count} 个文件不在任何占用声明内：{sample}{more}")
     for q in open_q:
         if q.get("read_error"):
             warnings.append(f"inbox 无法可靠读取：{q['path']}")
@@ -1243,6 +1441,9 @@ def context_payload(payload: dict, agent: str, session_id: str | None = None) ->
             output.update(standby=source.get("standby", False), occupies=source.get("occupies", True))
         if source.get("running_jobs_count"):
             output["running_jobs_count"] = source["running_jobs_count"]
+        if source.get("drift_count"):
+            output.update(drift_count=source["drift_count"], drift=source["drift"][:5],
+                          drift_truncated=source["drift_count"] > 5)
     standby_count = sum(bool(s.get("standby")) for s in sessions)
     if standby_count:
         result["counts"]["standby_sessions"] = standby_count
@@ -1748,6 +1949,7 @@ function sessionNode(s) {
   if (s.blocked && s.stale) head.appendChild(el("span","tag error","心跳失活"));
   if (s.duplicate_id) head.appendChild(el("span","tag error","重复 ID"));
   if (s.running_jobs_count) head.appendChild(el("span","tag pending",s.running_jobs_count + " 项跟踪命令记录"));
+  if (s.drift && s.drift.length) head.appendChild(el("span","tag error",(s.drift_count || s.drift.length) + " 项未登记改动"));
   node.appendChild(head); node.appendChild(el("div","task",s.standby ? "等待新任务 · 不占文件" : (s.task || "未填写任务")));
   if (s.standby && s.last_task) node.appendChild(el("div","progress clamp","上项任务：" + s.last_task));
   node.appendChild(el("span","tag branch",s.branch || "未记录分支"));
@@ -1764,6 +1966,11 @@ function sessionNode(s) {
   details.appendChild(el("div","detail-label","原始状态 / 最后心跳")); details.appendChild(el("div","detail-text",(s.status || "未记录") + " / " + shortTime(s.heartbeat)));
   if (s.files && s.files.length) { const list = el("ul","files"); s.files.forEach(f => list.appendChild(el("li","",f))); details.appendChild(list); }
   else details.appendChild(el("div","meta","未声明文件范围；请核对原记录。"));
+  if (s.drift && s.drift.length) {
+    details.appendChild(el("div","detail-label","未登记改动（不在任何占用声明内）" + (s.drift_truncated ? " · 仅显示前 50 项" : "")));
+    const drift = el("ul","files"); s.drift.forEach(f => drift.appendChild(el("li","",f)));
+    details.appendChild(drift);
+  }
   if (s.claims_error) details.appendChild(el("div","meta age-bad","文件范围记录无效，不能视为没有占用。"));
   if (s.progress) { details.appendChild(el("div","detail-label","完整进度")); details.appendChild(el("div","detail-text",s.progress)); }
   if (s.handoff) { details.appendChild(el("div","detail-label","完整交接")); details.appendChild(el("div","detail-text",s.handoff)); }
@@ -1811,7 +2018,7 @@ function renderLists(d,items) {
   sel.replaceChildren(); const all=el("option","","所有平台"); all.value="all"; sel.appendChild(all);
   agents.forEach(a => { const o=el("option","",a); o.value=a; sel.appendChild(o); }); sel.value=agents.includes(prior) ? prior : "all";
   const search=$("session-search").value.trim().toLocaleLowerCase();
-  const sessions=d.sessions.filter(s => matchesSession(s,sessionFilter) && (sel.value === "all" || (s.agent || "未知平台") === sel.value) && [s.id,s.task,s.branch,s.workspace,s.progress,s.handoff].concat(s.files || []).join(" ").toLocaleLowerCase().includes(search));
+  const sessions=d.sessions.filter(s => matchesSession(s,sessionFilter) && (sel.value === "all" || (s.agent || "未知平台") === sel.value) && [s.id,s.task,s.branch,s.workspace,s.progress,s.handoff].concat(s.files || []).concat(s.drift || []).join(" ").toLocaleLowerCase().includes(search));
   $("sessions").replaceChildren(...sessions.map(sessionNode));
   if (!sessions.length) $("sessions").appendChild(emptyNode(d.sessions.length ? "没有符合筛选的会话" : "还没有会话记录",d.sessions.length ? "调整状态、平台或搜索词，可查看其它登记。" : "agent 登记任务后，这里会显示会话与文件范围。",d.sessions.length ? resetSessions : null));
   $("s-count").textContent="显示 " + sessions.length + " / " + d.sessions.length;
@@ -2269,7 +2476,7 @@ def make_server(root: Path, port: int = 0, stale_min: int = STALE_MIN_DEFAULT,
             host = self.headers.get("Host", "")
             return urlsplit(src).netloc == host
 
-        def do_GET(self) -> None:    # noqa: N802（http.server 的命名约定）
+        def do_GET(self) -> None:    # noqa: N802  # http.server 的命名约定
             if not self._gate_auth():
                 return
             path = urlsplit(self.path).path
@@ -2682,7 +2889,7 @@ def print_human(p: dict) -> None:
 
     # ---- open PR（仅 --prs；开着的 PR 也是"活跃会话"，见 AGENTS.md 第 3 节）----
     if p["prs_requested"]:
-        print(f"\n【open PR】")
+        print("\n【open PR】")
         if p["open_prs"] is None:
             print("  ℹ️  gh 不可用/未登录/超时 —— 请手工跑 `gh pr list --state open` 后再开工")
         elif not p["open_prs"]:

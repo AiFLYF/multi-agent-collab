@@ -1,7 +1,6 @@
 """Tracked commands preserve results, stay attributable and stop on lost gates."""
 import argparse
 import contextlib
-import io
 import json
 import os
 import subprocess
@@ -175,7 +174,8 @@ class TrackedCommandTests(unittest.TestCase):
             finally:
                 if timer is not None:
                     timer.join()
-            output.seek(0); errors.seek(0)
+            output.seek(0)
+            errors.seek(0)
             self.assertEqual(result, 7)
             self.assertEqual(json.loads(output.read()), {"code": 7})
             self.assertEqual(errors.read().count("提醒：inbox"), 1)

@@ -553,7 +553,8 @@ def install_file(dest: Path, content: str, target: Path,
         bk = backup_dest(dest, target)
         print(f"  ~ 覆盖（旧版备份 {bk.relative_to(target)}）  {dest}")
         if not dry_run:
-            guard = lambda: validate_backup_path(bk, target)
+            def guard():
+                validate_backup_path(bk, target)
             write_bytes_atomic(bk, dest.read_bytes(), stat.S_IMODE(dest.stat().st_mode), guard)
             guard()
             shutil.copystat(dest, bk)
@@ -2013,7 +2014,8 @@ def _read_sync_core(target: Path, relative: str) -> ast.AST:
             opened = os.fstat(stream.fileno())
             data = stream.read(SYNC_CORE_MAX_BYTES + 1)
         after = path.lstat()
-        signature = lambda info: (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+        def signature(info):
+            return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
         if signature(before) != signature(opened) or signature(before) != signature(after):
             raise ValueError("核验期间文件发生变化")
         if not data or len(data) > SYNC_CORE_MAX_BYTES:

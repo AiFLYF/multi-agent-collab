@@ -4,6 +4,15 @@
 `.multi-agent-collab/install.json`（旧布局为 `.agents/install.json`），`doctor` 据此提示升级。
 版本号遵循语义化版本（major.minor.patch）。
 
+## 未发布
+
+- 新增 `agents_messages.py send / reply`：agent 以已登记会话身份发送协作消息或回复事项；`from` 由工具写入，控制指令仍只由人类看板发出。`reply` 同时接受发给 `any`、当前平台或当前会话的消息。
+- `reply` 默认保持 `open`，完成后显式 `--status answered`；增加原要求版本检查、锁内身份复核和原字节比较，保留 BOM/换行/权限/正文，拒绝围栏分界错误、非法状态和重启已解除的控制。send/reply/archive 接入活动记录。
+- 新增 `agents_messages.py archive`：只归档当前工作区关闭且创建/回复/修改均超期的普通消息；默认预览零写，带身份的 `--apply` 才移动。保留未答、控制、未读回复和未结束会话引用，版本变化拒绝移动，同名不覆盖，批次失败尝试回滚；实时队列超限时仍可归档，批量与输出均有界。
+- 新增范围漂移检测：`start` / `activate` 以随机任务标识绑定路径/文件元数据基线，识别新改动及旧脏文件再次变化；旧记录无基线不推测，损坏/失败基线不崩溃或复用旧任务，Git 扫描失败不报告无改动。上下文只展示有限路径和总数，不据此确认修改者或释放占用。
+- CI 增加独立 ruff 与 compileall 检查，第三方 Actions 固定到完整 commit SHA，Python 矩阵更新为 3.8 / 3.11 / 3.13 / 3.14，并启用 Dependabot。
+- compileall 缓存定向 runner 临时目录，避免产物随套件复制；Dependabot 更新指向 develop 并合并依赖更新为有限批次。
+
 ## 1.8.0 — 2026-11-09
 
 - 被拒绝的会话状态变更不再附带改写活动时间，修复跨过一分钟节流边界时 finish 失败却改变记录的问题；保留错误码、未完成人类事项门禁和原记录字节。
