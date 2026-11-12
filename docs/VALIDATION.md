@@ -1,5 +1,49 @@
 # 可行性验证与使用边界
 
+## 1.9.0 首轮 CI、Windows 共享读取修复与最终本地验收（2026-11-13）
+
+首轮发布提交 `0d460fdf7cafc7afabd204428490e3b4889d3b2d` 的 [CI 43266817710](https://github.com/AiFLYF/multi-agent-collab/actions/runs/43266817710) 最终为 9 项成功、1 项失败、3 项取消。
+Windows / Python 3.11 的完整 464 项回归仅 `test_parallel_real_run_wrappers_keep_remaining_command_claimed` 失败，原错误是两条命令附加前有 wrapper 早退；该断言没有保存 wrapper stderr，因此不能把后续本机错误当作已捕获的远端错误。
+三个 Mac 取消项没有取得托管 runner；GitHub 注释明确报告 hosted runner 获取失败及 macOS arm64 容量不足，取消不计作通过。
+
+隔离的原提交在 Windows / Python 3.12 自然复现同一早退，实际 wrapper 返回 2，stderr 为活动文件原子替换的 WinError 5。
+Windows 3.12 与 3.11.9 的真实 `rb` 读句柄对照均确认：读句柄未关闭时替换被拒，关闭后同一次替换立即成功；3.11.9 的修前原用例六次通过，未宣称该运行时自然复现早退。
+修复仅对 Windows 错误 5/32 作最多 5 次尝试、合计 375ms 退避，每次替换前重新复核原目标与临时文件的路径、字节、身份、mtime 和权限。
+持续拒绝仍返回原错误；外部修改立即拒绝并保全，失败清理不删除同尺寸、同 mtime 但字节或权限已变的临时文件。详见 [A38](TROUBLESHOOTING.md#a38)。
+
+| 最终实际验收范围 | 结果 |
+|---|---|
+| Windows / Python 3.12.10 完整修复候选 | selfcheck 48/48、selftest 44/44、一次完整 unittest 472 项（460 通过、12 项平台跳过）、隔离演练 114/114；8 个阶段均退出 0 |
+| 编译、文档与预算 | Ruff、编译及安装说明同步退出 0；43 个 Python 文件通过 3.8 语法解析；必读 6,327 字符，精确 tokens=null |
+| 真实共享读句柄与篡改保护 | 新增 8 项 Windows 回归覆盖短句柄恢复、持续拒绝及重试期间原文件、临时文件、权限和目录重定向的保全；包含在最新整套测试中 |
+| 独立运行时前后对照 | 原 `test_jobs.py` 字节、20/40 秒预算和全部占用断言保持；修后 Python 3.12 与 3.11.9 各 3 次真实双 run 共 6 次全通过，两个运行时的真实短 reader 均恢复成功 |
+
+完整驱动每阶段核对 123 个冻结产品文件 SHA256 未变；独立对照的四份清单没有未解释差异，全部试用命令、进程和临时项目均已结束并完成清理。
+本机证据位于私有 `.agents/test-evidence/release-1.9/local-fix/`、`ci-repro/` 与 `publish/`，原首轮 CI、修前自然失败和初次清理拒绝均保留。
+以上为追加修复提交前的本地结果；最终远端矩阵、release PR、main/develop、正式标签和 Pages 结果以对应新提交的 GitHub 记录为准。
+下节保留第一次 Windows 候选与真实 v1.8.0 升级试用的历史验收，不把旧快照的通过替代本次修复后的验证。
+
+## 1.9.0 发布候选验收（2026-11-13）
+
+`release/1.9.0` 从已合入 [PR #11](https://github.com/AiFLYF/multi-agent-collab/pull/11) 的 `develop` 提交 `c0e1b99589d36587747f7fd27ef86abe050f3f86` 创建。
+本版本将消息 `send/reply` 闭环、安全归档、范围漂移提示和 CI 加固发布到默认安装来源 `main`；安装器、看板、README、CHANGELOG 与网站统一标识为 1.9.0。
+以下结果对应提交前的 123 个产品文件冻结候选，各阶段均核对源码 SHA256 未变；之后仅补本验证记录。
+
+| 实际验收范围 | 结果 |
+|---|---|
+| Windows / Python 3.12.10 完整候选 | selfcheck 48/48、selftest 44/44、一次完整 unittest 464 项（452 通过、12 项平台跳过）、隔离演练 114/114；8 个阶段均退出 0 |
+| 静态检查与上下文预算 | Ruff、安装文档同步和编译均退出 0；43 个 Python 文件通过 3.8 语法解析；必读 6,327 字符，低于 6,500，精确 tokens=null |
+| 真实 v1.8.0 → 1.9.0 升级 | 从真实旧标签安装的临时项目执行旧版 updater 的 check、预览、apply 及新版重复更新；43 条实际命令均符合预期退出码，38 项检查通过 |
+| 升级保全与双会话试用 | 平台选择、自定义分支策略、业务文件、人类入口文本、BOM/CRLF 与原本机记录保留；doctor 与 selfcheck 通过，独立收件人完成 open 进度回复、answered 结果回复和双方 standby 收尾 |
+
+升级试用前两次因调用安装器不支持的 `--version`、发送者尝试回复自己的 `any` 消息而失败，原命令与日志保留。
+后续按已有 CLI 契约使用真实独立收件人验证，包含发送者自回复被拒绝的预期退出码 2；没有修改产品或放宽断言。
+全部试用进程与临时项目已经清理，本机证据保存在私有 `.agents/test-evidence/release-1.9/local/` 与 `upgrade-trial/`，不随产品提交。
+
+本节验收发生于提交、推送前；本轮远端矩阵、PR、正式标签与 Pages 部署结果以 GitHub 对应提交的实际记录为准。
+本机未运行 macOS 或其它 Python 实际运行时，CI 配置覆盖三系统 × Python 3.8/3.11/3.13/3.14，Pages 复用完整测试后才部署。
+已安装项目仍需更新套件、重启长驻看板，并让既有 AI 对话明确重读变化部分或新开对话。
+
 ## 1.8.0 发布验证记录（2026-11-09）
 
 功能提交 `d5983e4` 已经由 [PR #8](https://github.com/AiFLYF/multi-agent-collab/pull/8) 合入 `develop`，开发基线为 `d457723`，两者文件树相同。

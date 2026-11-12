@@ -9,7 +9,7 @@
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](#安装下载一次按项目复用)
 [![deps](https://img.shields.io/badge/dependencies-none-success)](#仓库结构与验证)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![changelog](https://img.shields.io/badge/changelog-1.8.0-green)](CHANGELOG.md)
+[![changelog](https://img.shields.io/badge/changelog-1.9.0-green)](CHANGELOG.md)
 
 **本机 AI 编码协作套件。** 让同一项目里的 Codex、Claude Code、Cursor 等助手共享任务、文件占用、指令和交接记录，按项目分支策略开工，留下实际测试结果再收尾。
 
@@ -20,7 +20,7 @@
 [交互演示](https://aiflyf.github.io/multi-agent-collab/demo.html) ·
 [操作手册](docs/WORKFLOW.md) · [平台接入](docs/PLATFORMS.md) · [更新记录](CHANGELOG.md)
 
-**版本说明：** 当前版本为 1.8.0。默认安装源码取仓库 `main`；已经安装到项目中的套件需要执行更新命令，新提示词需要新开对话或明确重读后生效。
+**版本说明：** 当前版本为 1.9.0。默认安装源码取仓库 `main`；已经安装到项目中的套件需要执行更新命令，新提示词需要新开对话或明确重读后生效。
 以下载副本的 `CHANGELOG.md`、命令 `--help` 和安装体检结果为准。
 
 ## 安装：下载一次，按项目复用
