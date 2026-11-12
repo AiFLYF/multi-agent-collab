@@ -83,7 +83,7 @@ AUTH_FAIL_LIMIT = 5                        # 同一 IP 连续密码错误上限
 AUTH_LOCK_SEC = 60
 REQUEST_TIMEOUT_SEC = 10
 CONTEXT_MAX_CHARS = 6000
-_TARGET_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+_TARGET_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,100}$")
 _UNIQUE_METADATA_KEYS = {
     "agent", "branch", "status", "files", "started", "heartbeat", "last_activity", "last_command", "running_jobs", "workspace",
     "from", "to", "created", "date", "action", "acknowledged_inbox",
@@ -568,8 +568,8 @@ def _inbox_body_reply(text: str) -> tuple[str, str]:
     reply = ""
     m = re.search(r"^##\s*回复[^\n]*\n(?P<r>[\s\S]*)$", text, re.M)
     if m:
-        reply = "\n".join(l for l in m.group("r").splitlines()
-                          if "待回复" not in l).strip()
+        reply = "\n".join(line for line in m.group("r").splitlines()
+                          if not line.strip().startswith(("（待回复", "(待回复"))).strip()
     lines = text.splitlines()
     i = 1 if lines and lines[0].lstrip().startswith("#") else 0
     # 跳过连续的头部 kv 行、HTML 注释与紧随的空行
@@ -578,17 +578,17 @@ def _inbox_body_reply(text: str) -> tuple[str, str]:
                               or lines[i].lstrip().startswith("<!--")):
         i += 1
     body_lines = []
-    for l in lines[i:]:
-        if l.startswith("## 回复") or l.strip() == "---":
+    for line in lines[i:]:
+        if line.startswith("## 回复") or line.strip() == "---":
             break
         # 跳过「## 指令」「## 背景」这类正文小节标题，只留正文本身
-        if l.startswith("## "):
+        if line.startswith("## "):
             continue
-        body_lines.append(l)
+        body_lines.append(line)
     body = "\n".join(body_lines).strip()
     # 去掉转义时为防结构注入加的行首空格（仅去我们加的那种整行缩进）
-    body = "\n".join(l[1:] if l.startswith(" ") and l[1:2] in ("#", "-", ">", "<")
-                     else l for l in body.split("\n"))
+    body = "\n".join(line[1:] if line.startswith(" ") and line[1:2] in ("#", "-", ">", "<")
+                     else line for line in body.split("\n"))
     return body.strip(), reply
 
 
@@ -662,8 +662,13 @@ def _neutralize_body(body: str) -> str:
 
 def create_directive(inbox_dir: Path, to: str, body: str,
                      from_name: str = "", now: datetime | None = None,
-                     action: str = "message") -> Path:
-    """把一条人类指令写成 Q-YYYY-MM-DD-NN.md（O_EXCL 抢序号，并发也不互撞）。"""
+                     action: str = "message", sender: str | None = None,
+                     label: str = "人类指令") -> Path:
+    """把一条消息写成 Q-YYYY-MM-DD-NN.md（O_EXCL 抢序号，并发也不互撞）。
+
+    ``sender`` 非空时写入真实会话 ID，用于 agent 之间的协作消息；人类看板
+    仍然走默认分支，``from`` 固定为 ``human``（含显示名）。
+    """
     to = (to or "any").strip()
     if to != "any" and not _TARGET_RE.match(to):
         raise ValueError(f"非法目标：{to!r}")
@@ -676,7 +681,16 @@ def create_directive(inbox_dir: Path, to: str, body: str,
     if len(body) > DIRECTIVE_MAX_LEN:
         raise ValueError(f"指令超过 {DIRECTIVE_MAX_LEN} 字")
     body = _neutralize_body(body)
-    sender = _clean_one_line(from_name or "", 20)
+    if sender is not None:
+        if (not isinstance(sender, str) or not _TARGET_RE.fullmatch(sender)
+                or sender.casefold().startswith("human")):
+            raise ValueError("发送者必须是合法会话 ID")
+        if action != "message":
+            raise ValueError("agent 只能发送普通协作消息")
+        who = sender
+    else:
+        display = _clean_one_line(from_name or "", 20)
+        who = f"human（{display}）" if display else "human"
     now = now or datetime.now()
     stamp = f"{now:%Y-%m-%d %H:%M}"
     prefix = f"Q-{now:%Y-%m-%d}-"
@@ -684,12 +698,11 @@ def create_directive(inbox_dir: Path, to: str, body: str,
     seq = len(existing) + 1
     title = _clean_one_line(body.splitlines()[0], 24)
     inbox_dir.mkdir(parents=True, exist_ok=True)
-    who = f"human（{sender}）" if sender else "human"
     for _ in range(50):
         name = f"{prefix}{seq:02d}.md"
         dest = inbox_dir / name
         content = (
-            f"# Q-{now:%Y-%m-%d}-{seq:02d}: 人类指令：{title}\n\n"
+            f"# Q-{now:%Y-%m-%d}-{seq:02d}: {label}：{title}\n\n"
             f"- from: {who}\n- to: {to}\n- status: open\n- action: {action}\n"
             f"- created: {stamp}\n- answered: \n\n"
             f"## 指令\n\n{body}\n\n---\n\n## 回复\n\n"

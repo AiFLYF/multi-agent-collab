@@ -22,7 +22,7 @@ ACTIVITY_COMMANDS = frozenset(
     {"agents_status", "agents_status.py", "agents_messages", "agents_messages.py",
      "agents_session", "agents_session.py", "agents_update", "agents_update.py", "install.py"}
     | {"agents_status." + name for name in ("context", "brief", "json", "status", "html")}
-    | {"agents_messages." + name for name in ("list", "read")}
+    | {"agents_messages." + name for name in ("list", "read", "send", "reply", "archive")}
     | {"agents_session." + name for name in
        ("check", "start", "heartbeat", "handoff", "resume", "finish", "standby", "activate", "run",
         "takeover-inspect", "takeover-plan", "takeover-apply", "takeover-cancel")}

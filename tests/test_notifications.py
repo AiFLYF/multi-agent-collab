@@ -10,11 +10,11 @@ import os
 import subprocess
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
-from selftest import KIT, PY, install, run, rmtree_readonly
+from selftest import KIT, PY, board, install, run, rmtree_readonly
 import agents_messages as messages
 import agents_notifications as notifications
 
@@ -743,7 +743,7 @@ class TestInstalledMessageEntry(unittest.TestCase):
         before = {p.relative_to(self.root).as_posix(): (p.stat().st_mtime_ns, p.read_bytes())
                   for p in self.root.rglob("*") if p.is_file() and ".git" not in p.relative_to(self.root).parts}
         result = run(PY, "-B", str(self.entry), "read", "--root", str(subdirectory), "--agent", "codex",
-                     "--session", session_id, "--json", cwd=subdirectory, timeout=90)
+                     "--session", session_id, "--json", "--no-activity", cwd=subdirectory, timeout=90)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         data = json.loads(result.stdout)
         self.assertEqual(Path(data["root"]), self.root)
@@ -752,6 +752,203 @@ class TestInstalledMessageEntry(unittest.TestCase):
         after = {p.relative_to(self.root).as_posix(): (p.stat().st_mtime_ns, p.read_bytes())
                  for p in self.root.rglob("*") if p.is_file() and ".git" not in p.relative_to(self.root).parts}
         self.assertEqual(after, before)
+
+
+class TestMessageActions(_NotificationFixture):
+    def setUp(self):
+        super().setUp()
+        (self.root / ".agents" / "coordination.lock").write_bytes(b"0")
+
+    def action(self, command, *extra):
+        output, errors = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            rc = messages.main([command, "--root", str(self.root), "--agent", "codex",
+                                "--session", self.session_id, "--json", *extra])
+        text = output.getvalue()
+        return rc, (json.loads(text) if text.strip() else {}), errors.getvalue()
+
+    def test_send_uses_verified_session_as_sender(self):
+        rc, data, errors = self.action("send", "--to", "any", "--body", "Please review src/app.py")
+        self.assertEqual(rc, 0, data)
+        path = Path(data["path"])
+        self.assertTrue(path.is_file(), errors)
+        fields = board.parse_kv(path)
+        self.assertEqual(fields["from"], self.session_id)
+        self.assertEqual(fields["to"], "any")
+        self.assertEqual(fields["action"], "message")
+        self.assertIn("Please review src/app.py", path.read_text(encoding="utf-8"))
+
+    def test_send_rejects_controls_and_missing_identity_without_writing(self):
+        before = self.snapshot()
+        rc, data, _errors = self.action("send", "--to", "any", "--body", "stop", "--action", "pause")
+        self.assertEqual(rc, 2, data)
+        self.assertIn("控制", data.get("error", ""))
+        output, errors = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            rc = messages.main(["send", "--root", str(self.root), "--agent", "codex",
+                                "--json", "--to", "any", "--body", "anonymous"])
+        self.assertEqual(rc, 2)
+        self.assertIn("--session", output.getvalue() + errors.getvalue())
+        self.assertEqual(self.snapshot(), before)
+
+    def test_send_rejects_unknown_target_without_writing(self):
+        before = self.snapshot()
+        rc, data, _errors = self.action("send", "--to", "claude-missing", "--body", "hello")
+        self.assertEqual(rc, 2, data)
+        self.assertIn("不存在", data.get("error", ""))
+        self.assertEqual(self.snapshot(), before)
+
+    def test_reply_appends_text_and_marks_answered(self):
+        path = self.inbox("Q-reply-target.md", sender="claude", target=self.session_id,
+                          body="Original request body.", reply="（待回复；执行后把结果写在这里）")
+        rc, data, errors = self.action("reply", path.name, "--body", "Done; tests pass.", "--status", "answered")
+        self.assertEqual(rc, 0, data)
+        text = path.read_text(encoding="utf-8")
+        self.assertIn("Original request body.", text)
+        self.assertIn("Done; tests pass.", text)
+        self.assertIn(self.session_id, text)
+        self.assertNotIn("（待回复", text)
+        fields = board.parse_kv(path)
+        self.assertEqual(fields["status"], "answered")
+        self.assertTrue(fields["answered"])
+        self.assertTrue(errors == "")
+
+    def test_reply_can_keep_item_open(self):
+        path = self.inbox("Q-keep-open.md", sender="claude", target=self.session_id)
+        rc, data, _errors = self.action("reply", path.name, "--body", "Need one more check.", "--status", "open")
+        self.assertEqual(rc, 0, data)
+        fields = board.parse_kv(path)
+        self.assertEqual(fields["status"], "open")
+        self.assertEqual(fields["answered"], "")
+        self.assertIn("Need one more check.", path.read_text(encoding="utf-8"))
+
+    def test_reply_accepts_message_addressed_to_the_platform(self):
+        path = self.inbox("Q-platform-target.md", sender="human", target="codex",
+                          body="Please handle the platform request.")
+        rc, data, _errors = self.action("reply", path.name, "--body", "Platform request handled.", "--status", "answered")
+        self.assertEqual(rc, 0, data)
+        fields = board.parse_kv(path)
+        self.assertEqual(fields["status"], "answered")
+        self.assertTrue(fields["answered"])
+        self.assertIn("Platform request handled.", path.read_text(encoding="utf-8"))
+
+    def test_reply_rejects_message_for_another_session(self):
+        path = self.inbox("Q-other-session.md", sender="claude", target="claude")
+        before = path.read_bytes()
+        rc, data, _errors = self.action("reply", path.name, "--body", "Not mine.")
+        self.assertEqual(rc, 2, data)
+        self.assertEqual(path.read_bytes(), before)
+
+
+class TestMessageArchive(_NotificationFixture):
+    def write_message(self, name, *, status, action="message", created=None,
+                      answered=None, sender="claude", target="codex", body="Archivable body."):
+        created = created or (datetime.now() - timedelta(days=40)).strftime("%Y-%m-%d %H:%M")
+        lines = [
+            "# " + name,
+            "",
+            f"- from: {sender}",
+            f"- to: {target}",
+            f"- status: {status}",
+            f"- action: {action}",
+            f"- created: {created}",
+            f"- answered: {answered or ''}",
+            "",
+            "## 问题",
+            "",
+            body,
+            "",
+            "---",
+            "",
+            "## 回复",
+            "",
+            "done",
+            "",
+        ]
+        path = self.root / ".agents" / "inbox" / name
+        path.write_text("\n".join(lines), encoding="utf-8")
+        instant = board.parse_time(created)
+        if instant is not None:
+            os.utime(path, (instant.timestamp(), instant.timestamp()))
+        return path
+
+    def run_archive(self, *extra):
+        output, errors = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            rc = messages.main(["archive", "--root", str(self.root), "--json", *extra,
+                                "--agent", "codex", "--session", self.session_id, "--no-activity"])
+        text = output.getvalue()
+        return rc, (json.loads(text) if text.strip() else {}), errors.getvalue()
+
+    def test_dry_run_lists_eligible_messages_without_any_write(self):
+        path = self.write_message("Q-old-answered.md", status="answered")
+        before = self.snapshot()
+        rc, data, errors = self.run_archive()
+        self.assertEqual(rc, 0, errors)
+        self.assertFalse(data["applied"], data)
+        self.assertEqual(data["older_than_days"], 30)
+        self.assertEqual([item["file"] for item in data["candidates"]], ["Q-old-answered.md"])
+        expected_month = (datetime.now() - timedelta(days=40)).strftime("%Y-%m")
+        destination = data["candidates"][0]["destination"].replace("\\", "/")
+        self.assertTrue(
+            destination.endswith(f".agents/inbox/archive/{expected_month}/Q-old-answered.md"),
+            destination)
+        self.assertEqual(data["moved"], [])
+        self.assertTrue(path.is_file())
+        self.assertEqual(self.snapshot(), before)
+
+    def test_apply_moves_only_closed_old_messages_and_keeps_others(self):
+        old_answered = self.write_message("Q-old-answered.md", status="answered")
+        original_bytes = old_answered.read_bytes()
+        old_open = self.write_message("Q-old-open.md", status="open")
+        recent = self.write_message("Q-recent-answered.md", status="answered",
+                                    created=datetime.now().strftime("%Y-%m-%d %H:%M"))
+        control = self.write_message("Q-old-control.md", status="closed", action="pause")
+        rc, data, errors = self.run_archive("--apply")
+        self.assertEqual(rc, 0, errors)
+        self.assertTrue(data["applied"])
+        self.assertEqual([item["file"] for item in data["moved"]], ["Q-old-answered.md"])
+        self.assertFalse(old_answered.exists())
+        moved_to = Path(data["moved"][0]["destination"])
+        self.assertTrue(moved_to.is_file())
+        self.assertEqual(moved_to.read_bytes(), original_bytes)
+        self.assertTrue(old_open.is_file())
+        self.assertTrue(recent.is_file())
+        self.assertTrue(control.is_file())
+
+    def test_apply_refuses_to_overwrite_an_existing_archive_file(self):
+        source = self.write_message("Q-collision.md", status="answered")
+        expected_month = (datetime.now() - timedelta(days=40)).strftime("%Y-%m")
+        destination = self.root / ".agents" / "inbox" / "archive" / expected_month / "Q-collision.md"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text("existing archive content", encoding="utf-8")
+        original_destination = destination.read_bytes()
+        rc, data, _errors = self.run_archive("--apply")
+        self.assertEqual(rc, 2, data)
+        self.assertTrue(source.is_file())
+        self.assertEqual(destination.read_bytes(), original_destination)
+
+    def test_messages_without_parseable_created_are_skipped_not_guessed(self):
+        path = self.write_message("Q-no-created.md", status="answered")
+        lines = [line for line in path.read_text(encoding="utf-8").splitlines()
+                 if not line.startswith("- created:")]
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        before = self.snapshot()
+        rc, data, errors = self.run_archive()
+        self.assertEqual(rc, 0, errors)
+        self.assertEqual(data["candidates"], [])
+        self.assertTrue(data["skipped"])
+        self.assertEqual(data["skipped"][0]["file"], "Q-no-created.md")
+        self.assertTrue(data["skipped"][0]["reason"])
+        self.assertEqual(self.snapshot(), before)
+
+    def test_archived_messages_disappear_from_scan_results(self):
+        self.write_message("Q-to-archive.md", status="answered",
+                           target=self.session_id)
+        rc, _data, errors = self.run_archive("--apply")
+        self.assertEqual(rc, 0, errors)
+        items = self.items()
+        self.assertNotIn("Q-to-archive.md", [Path(item["path"]).name for item in items])
 
 
 if __name__ == "__main__":
