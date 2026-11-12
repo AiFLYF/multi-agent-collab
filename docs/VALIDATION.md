@@ -1,5 +1,28 @@
 # 可行性验证与使用边界
 
+## 1.9.0 首轮 CI、Windows 共享读取修复与最终本地验收（2026-11-13）
+
+首轮发布提交 `0d460fdf7cafc7afabd204428490e3b4889d3b2d` 的 [CI 43266817710](https://github.com/AiFLYF/multi-agent-collab/actions/runs/43266817710) 最终为 9 项成功、1 项失败、3 项取消。
+Windows / Python 3.11 的完整 464 项回归仅 `test_parallel_real_run_wrappers_keep_remaining_command_claimed` 失败，原错误是两条命令附加前有 wrapper 早退；该断言没有保存 wrapper stderr，因此不能把后续本机错误当作已捕获的远端错误。
+三个 Mac 取消项没有取得托管 runner；GitHub 注释明确报告 hosted runner 获取失败及 macOS arm64 容量不足，取消不计作通过。
+
+隔离的原提交在 Windows / Python 3.12 自然复现同一早退，实际 wrapper 返回 2，stderr 为活动文件原子替换的 WinError 5。
+Windows 3.12 与 3.11.9 的真实 `rb` 读句柄对照均确认：读句柄未关闭时替换被拒，关闭后同一次替换立即成功；3.11.9 的修前原用例六次通过，未宣称该运行时自然复现早退。
+修复仅对 Windows 错误 5/32 作最多 5 次尝试、合计 375ms 退避，每次替换前重新复核原目标与临时文件的路径、字节、身份、mtime 和权限。
+持续拒绝仍返回原错误；外部修改立即拒绝并保全，失败清理不删除同尺寸、同 mtime 但字节或权限已变的临时文件。详见 [A38](TROUBLESHOOTING.md#a38)。
+
+| 最终实际验收范围 | 结果 |
+|---|---|
+| Windows / Python 3.12.10 完整修复候选 | selfcheck 48/48、selftest 44/44、一次完整 unittest 472 项（460 通过、12 项平台跳过）、隔离演练 114/114；8 个阶段均退出 0 |
+| 编译、文档与预算 | Ruff、编译及安装说明同步退出 0；43 个 Python 文件通过 3.8 语法解析；必读 6,327 字符，精确 tokens=null |
+| 真实共享读句柄与篡改保护 | 新增 8 项 Windows 回归覆盖短句柄恢复、持续拒绝及重试期间原文件、临时文件、权限和目录重定向的保全；包含在最新整套测试中 |
+| 独立运行时前后对照 | 原 `test_jobs.py` 字节、20/40 秒预算和全部占用断言保持；修后 Python 3.12 与 3.11.9 各 3 次真实双 run 共 6 次全通过，两个运行时的真实短 reader 均恢复成功 |
+
+完整驱动每阶段核对 123 个冻结产品文件 SHA256 未变；独立对照的四份清单没有未解释差异，全部试用命令、进程和临时项目均已结束并完成清理。
+本机证据位于私有 `.agents/test-evidence/release-1.9/local-fix/`、`ci-repro/` 与 `publish/`，原首轮 CI、修前自然失败和初次清理拒绝均保留。
+以上为追加修复提交前的本地结果；最终远端矩阵、release PR、main/develop、正式标签和 Pages 结果以对应新提交的 GitHub 记录为准。
+下节保留第一次 Windows 候选与真实 v1.8.0 升级试用的历史验收，不把旧快照的通过替代本次修复后的验证。
+
 ## 1.9.0 发布候选验收（2026-11-13）
 
 `release/1.9.0` 从已合入 [PR #11](https://github.com/AiFLYF/multi-agent-collab/pull/11) 的 `develop` 提交 `c0e1b99589d36587747f7fd27ef86abe050f3f86` 创建。
