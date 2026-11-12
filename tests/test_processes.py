@@ -10,8 +10,6 @@ import sys
 import tempfile
 import time
 import unittest
-import uuid
-from datetime import datetime
 from pathlib import Path
 from unittest import mock
 

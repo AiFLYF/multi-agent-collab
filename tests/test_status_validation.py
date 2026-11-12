@@ -10,7 +10,6 @@ from pathlib import Path
 
 from selftest import KIT, PY, board, rmtree_readonly, run
 import agents_activity as activity
-import agents_session as sessions
 
 
 class TestStatusValidation(unittest.TestCase):

@@ -93,11 +93,27 @@ class PublishingWorkflowTests(unittest.TestCase):
     def test_test_and_publish_checkouts_use_the_event_commit_and_do_not_keep_credentials(self):
         for source in (self.tests, self.deploy):
             with self.subTest(source="selftest" if source == self.tests else "deploy"):
-                checkout = re.search(r"(?m)^      - uses: actions/checkout@v4\n"
+                checkout = re.search(r"(?m)^      - uses: actions/checkout@[0-9a-f]{40}(?: # v4)?\n"
                                      r"        with:\n((?:          [^\n]+\n)+)", source)
                 self.assertIsNotNone(checkout)
                 self.assertIn("          ref: ${{ github.sha }}\n", checkout.group(1))
                 self.assertIn("          persist-credentials: false\n", checkout.group(1))
+
+    def test_actions_are_pinned_to_full_commit_sha(self):
+        for source in (self.tests, self.pages):
+            for match in re.finditer(r"(?m)^\s*-?\s*uses: ([^\s#]+)", source):
+                reference = match.group(1)
+                if reference.startswith("./"):
+                    continue
+                with self.subTest(reference=reference):
+                    self.assertRegex(reference, r"@[0-9a-f]{40}$",
+                                     "third-party actions must be pinned to a full commit SHA")
+
+    def test_compilation_cache_is_outside_the_product_source(self):
+        stage = re.search(r"- name: Compile Python sources\n(?P<body>(?:        [^\n]+\n)+)", self.tests)
+        self.assertIsNotNone(stage)
+        self.assertIn("PYTHONPYCACHEPREFIX: ${{ runner.temp }}/", stage.group("body"))
+        self.assertIn("python -m compileall", stage.group("body"))
 
     def test_only_deployment_job_receives_publishing_permissions(self):
         global_permissions = self.pages.split("jobs:", 1)[0]

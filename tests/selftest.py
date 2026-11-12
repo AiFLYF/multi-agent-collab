@@ -176,7 +176,7 @@ class TestBoardUnits(unittest.TestCase):
     def test_selfcheck_passes(self) -> None:
         r = run(PY, str(KIT / "tools" / "agents_status.py"), "--selfcheck", cwd=KIT)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn(f"selfcheck: 48/48 通过", r.stdout)
+        self.assertIn("selfcheck: 48/48 通过", r.stdout)
 
     def test_board_version_matches_installer(self) -> None:
         """看板 BOARD_VERSION 必须与安装器 KIT_VERSION 一致（防双份漂移）。"""
