@@ -70,6 +70,11 @@ heartbeat 保留 `YYYY-MM-DD HH:MM` 兼容格式；last_activity 使用工具写
 只修改自己的会话，不能冒用 ID 或因失活删除他人记录。
 同一物理工作区只登记一个独立写任务，同任务子代理由主会话分配不重叠文件。
 
+`start` / `activate` 会同时写入 `sessions/<会话ID>.baseline.json`，记录当时的改动路径与文件元数据快照；
+看板据此计算 `drift`（不属于任何占用声明的实际改动）。旧记录没有基线时不推测，
+基线通过随机任务标识绑定本次任务；缺失、损坏或写入失败只关闭漂移明细，不复用上一个任务的快照，不影响占用与门禁。
+文件元数据用于低成本检测，不逐个读取业务文件内容；同大小、相同 mtime 的外部修改可能不可见，漂移也不能证明修改者。
+
 ## 工作日志 `worklog/YYYY-MM-DD.md`
 
 - 只追加；订正历史时另追加一条并注明。
@@ -96,7 +101,26 @@ AI 发布消息时 `from` 使用自己的完整会话 ID，定向 `to` 使用对
 python .multi-agent-collab/tools/agents_messages.py list --agent codex --session <自己的ID>
 python .multi-agent-collab/tools/agents_messages.py read --agent codex --session <自己的ID>
 python .multi-agent-collab/tools/agents_messages.py read "<原文件绝对路径或唯一文件名>" --agent codex --session <自己的ID>
+python .multi-agent-collab/tools/agents_messages.py send --to <目标会话或平台或any> --body "..." --agent codex --session <自己的ID>
+python .multi-agent-collab/tools/agents_messages.py reply "<原文件绝对路径或唯一文件名>" --body "..." --agent codex --session <自己的ID>
+python .multi-agent-collab/tools/agents_messages.py reply "<原文件>" --body "完成结果与实际测试" --status answered --agent codex --session <自己的ID>
+python .multi-agent-collab/tools/agents_messages.py archive --older-than 30
+python .multi-agent-collab/tools/agents_messages.py archive --older-than 30 --limit 100 --apply --agent codex --session <自己的ID>
 ```
+
+`send` / `reply` 使用当前已验证会话 ID 作为 `from`，不能匿名或冒用他人身份；
+agent 只能发送 `message`，`pause / cancel / avoid` 控制指令仍只由人类看板发出。
+`reply` 默认保持 `open`；处理原要求后显式 `--status answered`，记录实际完成结果与时间。
+可回复发给 `any`、当前平台或当前会话的消息；`--request-version` 接受 `read` 返回的原要求版本，避免用旧要求的结果关闭新任务。
+写入前核对原字节、路径和身份，保留 BOM、换行、权限、原要求和已有回复；代码围栏中的回复标题不作为分界。
+消息字段不证明身份或测试通过，实际授权仍以用户要求为准；已解除的人类控制不会被回复重新激活。
+
+`archive` 仅归档当前工作区已关闭的普通消息到 `inbox/archive/YYYY-MM/`；创建、回复和最后修改均须超过保留期（默认 30 天）。
+省略 `--apply` 只预览、零写；实际归档须提供自己的 `--agent/--session`，每批默认 100 条，`--limit` 为 1–1000。
+未答事项、控制、未读回复及未结束会话的引用保留；日期无效或记录损坏列入 `skipped`。等待锁及移动前复核原版本，目标同名不覆盖。
+本批失败尝试逆序回滚；外部修改阻止回滚时报告保留位置。输出失败且已写入时先核对位置，不直接重复发送或归档。
+归档扫描可在实时队列超过 4096 条时继续工作；输出按 `--max-chars` 裁剪，完整总数不截断。预览截断返回 1，应用成功返回 0 并标明是否省略明细。
+归档后不参与实时消息扫描，历史可到归档目录读取；回执不随归档自动清除，长期使用仍需核对回执容量。
 
 `list` 只看元数据。默认 `read` 只读相关未读正文，指定文件可重读。
 明确的 `--agent / --session` 可顺带记录自己的活动；审计时加 `--no-activity` 保持零写。
@@ -114,7 +138,7 @@ python .multi-agent-collab/tools/agents_messages.py read "<原文件绝对路径
 <summary>消息预算与脚本接口</summary>
 
 默认输出预算 6000 字符，用 `--max-chars` 调整（1024–100000）；单条上限 1 MiB，4096 条以上明确报错。
-未完整阅读的事项不能凭部分文本 ack。仅已处理历史可归档，不能归档未答事项绕过门禁。
+未完整阅读的事项不能凭部分文本 ack。仅已处理历史可用 `archive` 归档，不能归档未答事项绕过门禁。
 JSON 仅在需要时附加可选 `notifications`；普通通知不改变原业务退出码。
 只有已读但未完的人类事项时，`read_command` 为 `null`，不要求读取空集。
 通知在工具调用时送达；run 可记录长命令期间活动，收到指令仍须按要求处理。待机不是后台监听或自动唤醒。

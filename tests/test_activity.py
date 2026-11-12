@@ -316,6 +316,172 @@ class TestActivity(unittest.TestCase):
         self.assertEqual(self.snapshot(), before)
         self.assertEqual(list(self.path.parent.glob(".*.activity-*.tmp")), [])
 
+    @contextmanager
+    def shared_reader_then_edit(self, edit):
+        original_replace = activity.os.replace
+        reader = self.path.open("rb")
+        denials = []
+
+        def observed_replace(source, destination):
+            try:
+                return original_replace(source, destination)
+            except PermissionError as error:
+                self.assertIn(error.winerror, (5, 32))
+                if not denials:
+                    denials.append(error.winerror)
+                    reader.close()
+                    edit(Path(source))
+                raise
+
+        try:
+            with mock.patch.object(activity.os, "replace", observed_replace):
+                yield denials
+        finally:
+            reader.close()
+
+    @unittest.skipUnless(os.name == "nt", "Windows read handles deny deletion")
+    def test_windows_retry_preserves_new_editor_bytes(self):
+        foreign = self.original.encode("utf-8") + b"\nA new editor note stays.\n"
+        edited = []
+
+        def edit(_temporary):
+            self.path.write_bytes(foreign)
+            edited.append(self.snapshot())
+
+        with self.shared_reader_then_edit(edit) as denials:
+            with self.assertRaisesRegex(ValueError, "外部修改"):
+                self.touch(force=True)
+        self.assertTrue(denials)
+        self.assertEqual(self.snapshot(), edited[0])
+        self.assertEqual(list(self.path.parent.glob(".*.activity-*.tmp")), [])
+
+    @unittest.skipUnless(os.name == "nt", "Windows read handles deny deletion")
+    def test_windows_retry_preserves_editor_permission_change(self):
+        edited = []
+
+        def edit(_temporary):
+            os.chmod(self.path, stat.S_IREAD)
+            edited.append((self.snapshot(), self.path.stat().st_mode))
+
+        try:
+            with self.shared_reader_then_edit(edit) as denials:
+                with self.assertRaisesRegex(ValueError, "外部修改"):
+                    self.touch(force=True)
+            self.assertTrue(denials)
+            self.assertEqual((self.snapshot(), self.path.stat().st_mode), edited[0])
+            self.assertEqual(list(self.path.parent.glob(".*.activity-*.tmp")), [])
+        finally:
+            os.chmod(self.path, stat.S_IREAD | stat.S_IWRITE)
+
+    @unittest.skipUnless(os.name == "nt", "Windows read handles deny deletion")
+    def test_windows_retry_preserves_modified_temporary_with_same_metadata(self):
+        before = self.snapshot()
+        edited = []
+
+        def edit(temporary):
+            info = temporary.stat()
+            payload = temporary.read_bytes()
+            temporary.write_bytes(b"X" + payload[1:])
+            os.utime(temporary, ns=(info.st_atime_ns, info.st_mtime_ns))
+            edited.append((temporary, temporary.read_bytes(), temporary.stat().st_mtime_ns))
+
+        try:
+            with self.shared_reader_then_edit(edit) as denials:
+                with self.assertRaisesRegex(ValueError, "临时文件被修改"):
+                    self.touch(force=True)
+            self.assertTrue(denials)
+            self.assertEqual(self.snapshot(), before)
+            temporary, payload, modified_at = edited[0]
+            self.assertEqual((temporary.read_bytes(), temporary.stat().st_mtime_ns), (payload, modified_at))
+        finally:
+            for temporary, _payload, _modified_at in edited:
+                temporary.unlink(missing_ok=True)
+
+    @unittest.skipUnless(os.name == "nt", "Windows read handles deny deletion")
+    def test_windows_retry_preserves_reused_temporary_name(self):
+        before = self.snapshot()
+        edited = []
+
+        def edit(temporary):
+            info, payload = temporary.stat(), temporary.read_bytes()
+            saved = temporary.with_suffix(".saved")
+            temporary.rename(saved)
+            temporary.write_bytes(payload)
+            os.chmod(temporary, stat.S_IMODE(info.st_mode))
+            os.utime(temporary, ns=(info.st_atime_ns, info.st_mtime_ns))
+            self.assertNotEqual(temporary.stat().st_ino, saved.stat().st_ino)
+            edited.append((temporary, saved, payload))
+
+        try:
+            with self.shared_reader_then_edit(edit) as denials:
+                with self.assertRaisesRegex(ValueError, "临时文件被修改"):
+                    self.touch(force=True)
+            self.assertTrue(denials)
+            self.assertEqual(self.snapshot(), before)
+            temporary, saved, payload = edited[0]
+            self.assertEqual(temporary.read_bytes(), payload)
+            self.assertEqual(saved.read_bytes(), payload)
+        finally:
+            for temporary, saved, _payload in edited:
+                temporary.unlink(missing_ok=True)
+                saved.unlink(missing_ok=True)
+
+    @unittest.skipUnless(os.name == "nt", "Windows read handles deny deletion")
+    def test_windows_retry_preserves_temporary_permission_change(self):
+        before = self.snapshot()
+        edited = []
+
+        def edit(temporary):
+            os.chmod(temporary, stat.S_IREAD)
+            edited.append((temporary, temporary.read_bytes(), temporary.stat().st_mode))
+
+        try:
+            with self.shared_reader_then_edit(edit) as denials:
+                with self.assertRaisesRegex(ValueError, "临时文件被修改"):
+                    self.touch(force=True)
+            self.assertTrue(denials)
+            self.assertEqual(self.snapshot(), before)
+            temporary, payload, mode = edited[0]
+            self.assertEqual((temporary.read_bytes(), temporary.stat().st_mode), (payload, mode))
+        finally:
+            for temporary, _payload, _mode in edited:
+                os.chmod(temporary, stat.S_IREAD | stat.S_IWRITE)
+                temporary.unlink(missing_ok=True)
+
+    @unittest.skipUnless(os.name == "nt", "Windows read handles deny deletion")
+    def test_windows_retry_directory_redirect_preserves_external_files(self):
+        folder, original = self.path.parent, self.path.read_bytes()
+        saved = folder.with_name("saved-retry-sessions")
+        outside = self.base / "outside-retry"
+        outside.mkdir()
+        foreign_record = outside / self.path.name
+        foreign_record.write_bytes(b"external record remains")
+        foreign_temporary = []
+
+        def edit(temporary):
+            sentinel = outside / temporary.name
+            sentinel.write_bytes(b"external temporary remains")
+            foreign_temporary.append((sentinel, sentinel.stat().st_mtime_ns))
+            folder.rename(saved)
+            directory_alias(self, folder, outside)
+
+        try:
+            with self.shared_reader_then_edit(edit) as denials:
+                with self.assertRaisesRegex(ValueError, "越界|symlink|junction"):
+                    self.touch(force=True)
+            self.assertTrue(denials)
+            self.assertEqual(foreign_record.read_bytes(), b"external record remains")
+            sentinel, modified_at = foreign_temporary[0]
+            self.assertEqual((sentinel.read_bytes(), sentinel.stat().st_mtime_ns), (b"external temporary remains", modified_at))
+            self.assertEqual((saved / self.path.name).read_bytes(), original)
+        finally:
+            if saved.exists():
+                if folder.exists():
+                    folder.rmdir()
+                saved.rename(folder)
+            for temporary in folder.glob(".*.activity-*.tmp"):
+                temporary.unlink()
+
     def test_identical_bytes_in_a_replaced_session_are_not_overwritten(self):
         original_mkstemp = activity.tempfile.mkstemp
         before = self.path.read_bytes()

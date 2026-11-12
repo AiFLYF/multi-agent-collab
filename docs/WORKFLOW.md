@@ -127,7 +127,23 @@ run 在会话顶部登记 `running_jobs`，仅记录包装进程、内部监督�
 python .multi-agent-collab/tools/agents_messages.py list --agent codex --session <ID>
 python .multi-agent-collab/tools/agents_messages.py read --agent codex --session <ID>
 python .multi-agent-collab/tools/agents_messages.py read "<原文件绝对路径或唯一文件名>" --agent codex --session <ID>
+python .multi-agent-collab/tools/agents_messages.py send --to <目标会话或平台或any> --body "..." --agent codex --session <ID>
+python .multi-agent-collab/tools/agents_messages.py reply "<原文件绝对路径或唯一文件名>" --body "..." --agent codex --session <ID>
+python .multi-agent-collab/tools/agents_messages.py reply "<原文件>" --body "实际完成结果与验证" --status answered --agent codex --session <ID>
+python .multi-agent-collab/tools/agents_messages.py archive --older-than 30
+python .multi-agent-collab/tools/agents_messages.py archive --older-than 30 --apply --agent codex --session <ID>
 ```
+
+`send` / `reply` 必须带自己的平台和会话 ID，`from` 由工具写入，不能手填或冒用；
+agent 只能发送普通消息，控制指令仍由人类看板发出。`reply` 默认保持 `open`，
+实际完成后用 `--status answered`；可回复发给 `any`、当前平台或当前会话的消息。
+处理与回复之间可能有人更新原要求时，用 `--request-version` 核对 `read` 返回的版本；变化后先处理新要求再回结果。
+
+收件箱堆积时用 `archive` 清理已处理历史：先不带 `--apply` 预览候选清单，
+确认后带自己的平台/会话执行 `--apply`，仅移动当前工作区超过保留期的已关闭普通消息。
+保留未答事项、控制、未读回复和未结束会话的引用；创建/回复/修改任一仍在保留期内都跳过。
+每批默认 100 条，支持 `--limit`；同名不覆盖，本批失败尝试回滚，无法回滚时保留并报告位置。
+日期无法解析或记录损坏列入跳过项，明细按预算裁剪但保留总数；不要手工移动 inbox 文件绕过检查。
 
 `list` 只看元数据；默认 `read` 只读相关未读正文，指定文件可重读。
 确认完整阅读后可加 `--mark-read` 保存回执；截断或核验错误时不标读，先核对退出码和完整输出。

@@ -511,7 +511,19 @@ class TestJobs(unittest.TestCase):
                 registered = jobs.jobs_for_record(self.record())
                 if len(registered) == 2 and all(value["child_pid"] is not None for value in registered.values()):
                     break
-                self.assertTrue(all(wrapper.poll() is None for wrapper in wrappers), "A wrapper exited before both jobs attached")
+                if not all(wrapper.poll() is None for wrapper in wrappers):
+                    exited = []
+                    for index, wrapper in enumerate(wrappers):
+                        if wrapper.poll() is not None:
+                            try:
+                                stdout, stderr = wrapper.communicate(timeout=5)
+                            except subprocess.TimeoutExpired as error:
+                                stdout, stderr = error.stdout or b"", error.stderr or b""
+                            exited.append({"wrapper": index, "exit_code": wrapper.returncode,
+                                           "stdout": stdout.decode("utf-8", errors="replace"),
+                                           "stderr": stderr.decode("utf-8", errors="replace")})
+                    self.fail("A wrapper exited before both jobs attached: " +
+                              json.dumps({"exited": exited, "registered": registered}, ensure_ascii=True))
                 time.sleep(0.05)
             self.assertEqual({value["owner_pid"] for value in registered.values()}, {wrapper.pid for wrapper in wrappers})
             self.assertTrue(all(value["child_pid"] is not None for value in registered.values()))

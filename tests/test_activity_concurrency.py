@@ -235,6 +235,73 @@ class TestActivityConcurrency(unittest.TestCase):
     def test_forced_activity_first_read_serializes_with_registration(self):
         self._exercise("touch", "register")
 
+    def _exercise_windows_reader(self, release_after_denial):
+        original = self.path.read_bytes(), self.path.stat().st_mtime_ns
+        denied = threading.Event()
+        errors, outcome = [], {}
+        original_replace = activity.os.replace
+
+        def observed_replace(*args, **kwargs):
+            try:
+                return original_replace(*args, **kwargs)
+            except PermissionError as error:
+                errors.append(error.winerror)
+                denied.set()
+                raise
+
+        def write_activity():
+            try:
+                outcome["result"] = activity.touch_activity(
+                    self.root, "codex", self.identifier, "agents_session.run",
+                    now=self.now, force=True, branch=self.branch)
+            except BaseException as error:
+                outcome.update(error_type=type(error).__name__, error=str(error),
+                               winerror=getattr(error, "winerror", None), traceback=traceback.format_exc())
+
+        writer = threading.Thread(target=write_activity, daemon=True)
+        reader = self.path.open("rb")
+        try:
+            with mock.patch.object(activity.os, "replace", observed_replace):
+                writer.start()
+                self.assertTrue(denied.wait(self.WAIT_SECONDS), outcome)
+                self.assertEqual((self.path.read_bytes(), self.path.stat().st_mtime_ns), original)
+                if release_after_denial:
+                    reader.close()
+                writer.join(self.WAIT_SECONDS)
+                self.assertFalse(writer.is_alive(), "Activity retry did not terminate while the reader remained open")
+        finally:
+            reader.close()
+            writer.join(self.WAIT_SECONDS)
+            if writer.is_alive():
+                type(self).preserve_fixture = True
+        diagnostic = json.dumps({"errors": errors, "outcome": outcome}, ensure_ascii=True)
+        self.assertTrue(errors, diagnostic)
+        self.assertTrue(all(error in (5, 32) for error in errors), diagnostic)
+        self.assertEqual(list(self.path.parent.glob(".*.activity-*.tmp")), [], diagnostic)
+        if release_after_denial:
+            self.assertTrue(outcome.get("result", {}).get("updated"), diagnostic)
+            fields = sessions.board.parse_kv(self.path)
+            for field in ("agent", "branch", "workspace", "task", "status", "files", "progress", "acknowledged_inbox"):
+                self.assertEqual(fields.get(field), self.before.get(field), diagnostic)
+            self.assertEqual(fields["last_activity"], self.now.isoformat(timespec="seconds"), diagnostic)
+            final = self.path.read_bytes()
+            self.assertTrue(final.startswith(b"\xef\xbb\xbf"), diagnostic)
+            self.assertTrue(final.endswith(self.body), diagnostic)
+            self.assertNotIn(b"\n", final.replace(b"\r\n", b""), diagnostic)
+        else:
+            self.assertEqual(outcome.get("error_type"), "PermissionError", diagnostic)
+            self.assertIn(outcome.get("winerror"), (5, 32), diagnostic)
+            self.assertNotIn("result", outcome, diagnostic)
+            self.assertEqual((self.path.read_bytes(), self.path.stat().st_mtime_ns), original, diagnostic)
+
+    @unittest.skipUnless(os.name == "nt", "Windows read handles deny deletion")
+    def test_windows_short_reader_allows_safe_activity_retry(self):
+        self._exercise_windows_reader(True)
+
+    @unittest.skipUnless(os.name == "nt", "Windows read handles deny deletion")
+    def test_windows_persistent_reader_is_a_bounded_zero_write_error(self):
+        self._exercise_windows_reader(False)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import subprocess
 import sys
 import time
@@ -88,6 +89,34 @@ def worktree_roots(root: Path) -> list[Path]:
     if not roots:
         raise ValueError("无法确定共享仓库的工作区，停止写入")
     return roots
+
+
+def session_baseline_path(root: Path, session_id: str) -> Path:
+    return safe_path(root, state_relative(root, f".agents/sessions/{session_id}.baseline.json"))
+
+
+def write_baseline(root: Path, session_id: str, generation: str) -> list[str] | None:
+    """Snapshot current workspace changes before a task starts.
+
+    Used by scope-drift reporting so changes that predate the session are not
+    blamed on it. A missing/failed baseline only disables drift detail; it must
+    never block the actual task registration.
+    """
+    try:
+        files = board.changed_files(root)
+        fingerprints = board.change_fingerprints(root, files)
+    except (ValueError, OSError, RuntimeError):
+        return None
+    content = json.dumps({"schema_version": 2, "generation": generation,
+                          "files": files, "fingerprints": fingerprints},
+                         ensure_ascii=False, separators=(",", ":")) + "\n"
+    if len(content.encode("utf-8")) > 2 * 1024 * 1024:
+        return None
+    try:
+        board._write_lf_atomic(session_baseline_path(root, session_id), content)
+    except (OSError, ValueError, RuntimeError):
+        return None
+    return files
 
 
 def refresh_worktree_roots(root: Path, primary: Path) -> list[Path]:
@@ -655,8 +684,21 @@ def execute(args: argparse.Namespace) -> dict:
             branch_ok = False
             if files:
                 conflicts.append(str(exc))
+        try:
+            workspace_changes = board.changed_files(root)
+            changes_error = None
+        except (ValueError, OSError, RuntimeError) as exc:
+            workspace_changes = []
+            changes_error = str(exc)[:200]
+        outside_scope = [item for item in workspace_changes if not board.path_covered(item, files)] if files else []
         return {"ok": not conflicts and not pending, "branch": branch, "files": files,
                 "conflicts": conflicts, "human_inbox": pending, "policy": policy,
+                "workspace_changes": workspace_changes[:5], "outside_scope": outside_scope[:5],
+                "workspace_changes_count": len(workspace_changes), "outside_scope_count": len(outside_scope),
+                "workspace_changes_truncated": len(workspace_changes) > 5,
+                "outside_scope_truncated": len(outside_scope) > 5,
+                "workspace_changes_available": changes_error is None,
+                **({"workspace_changes_error": changes_error} if changes_error else {}),
                 "task_branch_allowed": branch_ok}
     agent = one_line(args.agent, "平台名").lower()
     if not re.fullmatch(r"[a-z][a-z0-9-]{0,31}", agent):
@@ -691,16 +733,19 @@ def execute(args: argparse.Namespace) -> dict:
                 path = safe_path(root, state_relative(root, f".agents/sessions/{session_id}.md"))
                 if session_id not in existing_ids and not path.exists():
                     break
+            generation = secrets.token_hex(16)
             text = (f"# Session: {session_id}\n\n- agent: {agent}\n- branch: {branch}\n- task: {task}\n"
                     f"- files: {json.dumps(files, ensure_ascii=False)}\n- status: active\n"
                     f"- acknowledged_inbox: {json.dumps(acknowledged, ensure_ascii=False)}\n"
                     f"- acknowledged_inbox_versions: {json.dumps({item: requests[item] for item in acknowledged}, ensure_ascii=False)}\n"
-                    f"- started: {now}\n- heartbeat: {now}\n- pr: \n\n"
+                    f"- started: {now}\n- heartbeat: {now}\n- baseline_generation: {generation}\n- pr: \n\n"
                     "## 当前进度\n\n- 已登记任务与文件范围。\n\n## 下一步\n\n- 按项目测试门禁完成任务。\n\n"
                     "## 阻塞点 / handoff\n\n- 无\n")
             verify_requests_unchanged(roots, agent, None, requests)
             board._write_lf_atomic(path, text)
-            return {"ok": True, "id": session_id, "branch": branch, "files": files, "file": str(path)}
+            baseline = write_baseline(root, session_id, generation)
+            return {"ok": True, "id": session_id, "branch": branch, "files": files,
+                    "file": str(path), "baseline_files": len(baseline) if baseline is not None else None}
         session_id = args.session
         path, record = own_session(root, session_id, agent, branch)
         from agents_activity import read_session_record, replace_session_record, update_session_fields
@@ -755,7 +800,8 @@ def execute(args: argparse.Namespace) -> dict:
             result["answered_handoffs"] = close_handoffs(root, record, session_id, "原会话恢复工作：" + note)
             updates.update(status="active", files=json.dumps(files, ensure_ascii=False), progress=note, handoff="", handoff_inbox="")
             if args.cmd == "activate":
-                updates.update(task=task, branch=branch, task_started_at=datetime.now().isoformat(timespec="seconds"),
+                updates.update(task=task, branch=branch, baseline_generation=secrets.token_hex(16),
+                               task_started_at=datetime.now().isoformat(timespec="seconds"),
                                standby_since="")
                 result.update(task=task, files=files)
             updates["acknowledged_inbox"] = json.dumps(acknowledged, ensure_ascii=False)
@@ -831,6 +877,9 @@ def execute(args: argparse.Namespace) -> dict:
         if verified_requests is not None:
             verify_requests_unchanged(roots, agent, session_id, verified_requests)
         replace_session_record(root, session_id, record_snapshot, update_session_fields(text, updates))
+        if args.cmd == "activate":
+            baseline = write_baseline(root, session_id, updates["baseline_generation"])
+            result["baseline_files"] = len(baseline) if baseline is not None else None
         result["status"] = updates.get("status", record.get("status"))
         return result
 

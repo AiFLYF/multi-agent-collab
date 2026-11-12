@@ -150,21 +150,22 @@ def _full_bytes(root: Path, path: Path):
     return raw, text
 
 
-def _sections(text: str):
-    """Preserve every request section; only a real top-level reply starts replies."""
-    lines = text.replace("\r\n", "\n").replace("\r", "\n").splitlines(keepends=True)
-    start, started = 0, False
+def _section_offsets(text: str):
+    """Find request/reply boundaries without altering original bytes or fences."""
+    lines = text.splitlines(keepends=True)
+    start, offset, started = 0, 0, False
     for index, line in enumerate(lines):
         if _FIELD.match(line):
             started = True
-        elif line.strip() and (started or not line.lstrip().startswith(("# ", "<!--"))):
+        elif line.strip() and (started or not line.lstrip("\ufeff \t").startswith(("# ", "<!--"))):
             start = index
             break
+        offset += len(line)
     else:
         start = len(lines)
-    request = lines[start:]
+    request_start = offset
     fence = None
-    for index, line in enumerate(request):
+    for line in lines[start:]:
         marker = re.match(r"^ {0,3}(`{3,}|~{3,})([^\r\n]*)$", line.rstrip("\r\n"))
         if marker:
             token = marker.group(1)
@@ -174,15 +175,34 @@ def _sections(text: str):
                     fence = token
             elif token[0] == fence[0] and len(token) >= len(fence) and not suffix.strip(" \t"):
                 fence = None
-            continue
-        if fence is None and _REPLY.fullmatch(line.rstrip("\r\n")):
-            return "".join(request[:index]).strip(), "".join(request[index + 1:]).strip()
-    return "".join(request).strip(), ""
+        elif fence is None and _REPLY.fullmatch(line.rstrip("\r\n")):
+            return request_start, offset, offset + len(line)
+        offset += len(line)
+    return request_start, None, None
+
+
+def reply_boundary(text: str):
+    """Return the end of a real reply heading; fenced examples never match."""
+    return _section_offsets(text)[2]
+
+
+def is_reply_placeholder(line: str):
+    value = line.strip()
+    return value.startswith(("（待回复", "(待回复")) or value == "待回复"
+
+
+def _sections(text: str):
+    """Preserve every request section; only a real top-level reply starts replies."""
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    start, heading, reply = _section_offsets(text)
+    if reply is not None:
+        return text[start:heading].strip(), text[reply:].strip()
+    return text[start:].strip(), ""
 
 
 def _has_reply(reply: str):
     lines = [line.strip() for line in reply.splitlines() if line.strip()]
-    return any(not (line.startswith(("（待回复", "(待回复")) or line == "待回复") for line in lines)
+    return any(not is_reply_placeholder(line) for line in lines)
 
 
 def _request_preamble(text: str):

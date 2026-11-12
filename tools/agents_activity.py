@@ -9,12 +9,14 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 
 sys.dont_write_bytecode = True
 
 MAX_SESSION_BYTES = 1024 * 1024
+_WINDOWS_REPLACE_DELAYS = (0.025, 0.05, 0.1, 0.2)
 _AGENT = re.compile(r"[a-z][a-z0-9-]{0,31}\Z")
 _SESSION = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,100}\Z")
 _FIELD = re.compile(r"^([ \t]*[-*][ \t]*\*{0,2}([A-Za-z_][\w -]*?)\*{0,2}[ \t]*[:：][ \t]*)(.*?)$")
@@ -22,7 +24,7 @@ ACTIVITY_COMMANDS = frozenset(
     {"agents_status", "agents_status.py", "agents_messages", "agents_messages.py",
      "agents_session", "agents_session.py", "agents_update", "agents_update.py", "install.py"}
     | {"agents_status." + name for name in ("context", "brief", "json", "status", "html")}
-    | {"agents_messages." + name for name in ("list", "read")}
+    | {"agents_messages." + name for name in ("list", "read", "send", "reply", "archive")}
     | {"agents_session." + name for name in
        ("check", "start", "heartbeat", "handoff", "resume", "finish", "standby", "activate", "run",
         "takeover-inspect", "takeover-plan", "takeover-apply", "takeover-cancel")}
@@ -197,7 +199,8 @@ def _updated_text(text, updates):
 
 def _assert_original(root, session_id, path, expected, info):
     current_path, content, current_info, _text, _record = _read_record(root, session_id, path)
-    if current_path != path or content != expected or _signature(current_info) != _signature(info):
+    if (current_path != path or content != expected or _signature(current_info) != _signature(info)
+            or current_info.st_mode != info.st_mode):
         raise ValueError("活动写入前会话被外部修改；保留原现场")
 
 
@@ -205,6 +208,7 @@ def _replace_record(root, session_id, path, expected, info, content):
     _sessions, board = _modules()
     _assert_original(root, session_id, path, expected, info)
     temporary, temp_info, finished_info = None, None, None
+    mode_copied = False
     try:
         fd, name = tempfile.mkstemp(prefix="." + path.name + ".activity-", suffix=".tmp", dir=str(path.parent))
         temporary = Path(name)
@@ -218,14 +222,27 @@ def _replace_record(root, session_id, path, expected, info, content):
         if not stat.S_ISREG(actual_temp.st_mode) or (actual_temp.st_dev, actual_temp.st_ino) != (temp_info.st_dev, temp_info.st_ino):
             raise ValueError("活动临时文件被重定向；保留外部文件")
         os.chmod(temporary, stat.S_IMODE(info.st_mode))
-        _assert_original(root, session_id, path, expected, info)
-        board._checked_state_path(root, temporary)
-        current_temp = temporary.lstat()
-        if (_signature(current_temp) != _signature(finished_info)
-                or temporary.read_bytes() != content):
-            raise ValueError("活动替换前临时文件被修改；保留外部文件")
-        os.replace(str(temporary), str(path))
-        temporary = None
+        mode_copied = True
+        for attempt in range(len(_WINDOWS_REPLACE_DELAYS) + 1):
+            # A Windows reader may briefly deny deletion without changing the
+            # record. Never retry with stale target or temporary-file guards.
+            _assert_original(root, session_id, path, expected, info)
+            board._checked_state_path(root, temporary)
+            current_temp = temporary.lstat()
+            if (_signature(current_temp) != _signature(finished_info)
+                    or stat.S_IMODE(current_temp.st_mode) != stat.S_IMODE(info.st_mode)
+                    or temporary.read_bytes() != content):
+                raise ValueError("活动替换前临时文件被修改；保留外部文件")
+            try:
+                os.replace(str(temporary), str(path))
+            except OSError as error:
+                if (os.name != "nt" or getattr(error, "winerror", None) not in (5, 32)
+                        or attempt == len(_WINDOWS_REPLACE_DELAYS)):
+                    raise
+                time.sleep(_WINDOWS_REPLACE_DELAYS[attempt])
+            else:
+                temporary = None
+                break
     finally:
         if temporary is not None and temp_info is not None:
             # A redirected parent or reused temporary name belongs to somebody
@@ -234,7 +251,9 @@ def _replace_record(root, session_id, path, expected, info, content):
                 board._checked_state_path(root, temporary)
                 current = temporary.lstat()
                 if ((current.st_dev, current.st_ino) == (temp_info.st_dev, temp_info.st_ino)
-                        and (finished_info is None or _signature(current) == _signature(finished_info))):
+                        and stat.S_IMODE(current.st_mode) == stat.S_IMODE(info.st_mode if mode_copied else temp_info.st_mode)
+                        and (finished_info is None or (_signature(current) == _signature(finished_info)
+                                                       and temporary.read_bytes() == content))):
                     temporary.unlink()
             except (ValueError, OSError, RuntimeError):
                 pass

@@ -1,0 +1,10 @@
+[tool.ruff]
+target-version = "py38"
+line-length = 120
+extend-exclude = [".agents", ".multi-agent-collab", "site/vendor"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+# E402: modules intentionally import after sys.dont_write_bytecode.
+# E501: Chinese comments and long user-facing strings are reviewed manually.
+ignore = ["E402", "E501"]
