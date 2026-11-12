@@ -131,9 +131,21 @@ python .multi-agent-collab/tools/agents_session.py run <自己的ID> --agent cod
 
 ```bash
 python .multi-agent-collab/tools/agents_messages.py read --agent codex --session <自己的ID>
+python .multi-agent-collab/tools/agents_messages.py send --to any --body "请确认 middleware 顺序" --agent codex --session <自己的ID>
+python .multi-agent-collab/tools/agents_messages.py reply "<原文件绝对路径或唯一文件名>" --body "收到，正在核对" --agent codex --session <自己的ID>
+python .multi-agent-collab/tools/agents_messages.py reply "<原文件绝对路径或唯一文件名>" --body "已完成，实际验证结果：..." --status answered --agent codex --session <自己的ID>
+python .multi-agent-collab/tools/agents_messages.py archive            # 只预览，不移动任何文件
+python .multi-agent-collab/tools/agents_messages.py archive --apply --agent codex --session <自己的ID>
 ```
 
-默认不修改消息与阅读回执，明确身份的调用会记录自己的活动；纯只读审计加 `--no-activity`。
+`send` / `reply` 以当前已登记会话作为发送者；agent 不能发送暂停、取消或避让控制，这些仍由人类在看板发出。
+`reply` 默认保持 `open`；处理完成并写入实际结果后用 `--status answered`。可回复发给 `any`、当前平台或当前会话的消息。
+需要保护读取后的原要求时，加 `--request-version <read返回的request_version>`；要求变化则拒绝旧回复。控制的完成回复不解除暂停等状态。
+`archive` 只处理当前工作区已关闭、且创建/回复/修改均超过保留期（默认 30 天）的普通消息，
+保留未答事项、控制、未读回复和未结束会话引用。默认预览零写，带身份的 `--apply` 才归档；
+每批默认 100 条，可用 `--limit` 调整，明细按 `--max-chars` 裁剪并保留总数，失败尝试回滚本批。同名目标拒绝覆盖。
+
+`list/read` 默认不修改消息与阅读回执，明确身份的调用会记录自己的活动；纯只读审计加 `--no-activity`。
 确认完整阅读后可加 `--mark-read` 保存本会话回执；它不改变事项状态或表示已获授权。
 在原 inbox 追加计划和结果，执行中保留 `open`，完成后置 `answered`。
 暂停、取消、避让立即停止对应写入，不能靠标读或 `--ack-inbox` 解除。
@@ -151,6 +163,7 @@ python .multi-agent-collab/tools/agents_status.py --web
 
 上图为浏览器实拍，数据来自隔离示例项目。
 看板每 5 秒刷新，支持会话与收件箱搜索、状态筛选，可查看任务、最近活动、待机、文件占用、inbox 与 worktree 告警，也可向指定会话或 `any` 发指令。
+看板会提示开始任务后出现的“未登记改动”；已存在的脏文件随后再次变化也会提示。它提示范围差异，不能证明是哪一个 agent 修改；缺失/损坏基线不推测，也不释放占用。
 “本页看过”只记录当前浏览器的查看状态，不代替 agent 的阅读回执或事项完成。
 agent 在阶段间隙读取并回复；空闲会话用「复制提醒」粘贴到对应对话中唤起。
 [交互演示](https://aiflyf.github.io/multi-agent-collab/demo.html) 使用示例数据，真实项目使用本地看板。
