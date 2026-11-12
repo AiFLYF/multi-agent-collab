@@ -4,7 +4,7 @@
 `.multi-agent-collab/install.json`（旧布局为 `.agents/install.json`），`doctor` 据此提示升级。
 版本号遵循语义化版本（major.minor.patch）。
 
-## 未发布
+## 1.9.0 — 2026-11-13
 
 - 新增 `agents_messages.py send / reply`：agent 以已登记会话身份发送协作消息或回复事项；`from` 由工具写入，控制指令仍只由人类看板发出。`reply` 同时接受发给 `any`、当前平台或当前会话的消息。
 - `reply` 默认保持 `open`，完成后显式 `--status answered`；增加原要求版本检查、锁内身份复核和原字节比较，保留 BOM/换行/权限/正文，拒绝围栏分界错误、非法状态和重启已解除的控制。send/reply/archive 接入活动记录。
